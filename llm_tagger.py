@@ -3,6 +3,7 @@ import json
 import csv
 import time
 import random
+from sklearn.metrics import precision_recall_fscore_support
 
 # Local Code
 from secret_keys import OPENAI_API_KEY
@@ -81,7 +82,7 @@ class AITagger:
             output_csv_file_path (str): Path to save the mismatched predictions for inspection.
 
         Returns:
-            float: Accuracy score for the test.
+            tup (float): accuracy, f1 scores for the test.
         """
         print("[Test Mode]: Testing model on a random subset of tagged data.")
 
@@ -108,9 +109,13 @@ class AITagger:
         # Step 3: Evaluate predictions
         mismatched_predictions = []
         correct_predictions = 0
+        true_labels = []
+        predicted_labels = []
 
         for comment_id, comment, true_label in test_batch:
             predicted_label = self.__generate_response(comment)
+            true_labels.append(true_label)
+            predicted_labels.append(predicted_label)
             if predicted_label == true_label:
                 correct_predictions += 1
             else:
@@ -124,8 +129,14 @@ class AITagger:
         # Step 4: Calculate accuracy
         accuracy = correct_predictions / test_batch_size
         print(f"[Test Mode]: Accuracy on test batch: {accuracy * 100:.2f}%")
+        
+        # Step 5: Calculate precision, recall, and F1 score
+        _, _, f1, _ = precision_recall_fscore_support(
+            true_labels, predicted_labels, average="weighted", zero_division=0
+        )
+        print(f"[Test Mode]: F1 Score on test batch: {f1:.2f}")
 
-        # Step 5: Save mismatched predictions to a CSV file
+        # Step 6: Save mismatched predictions to a CSV file
         if mismatched_predictions:
             with open(output_csv_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
                 csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "comment", "true_label", "predicted_label"])
@@ -133,7 +144,7 @@ class AITagger:
                 csv_writer.writerows(mismatched_predictions)
             print(f"[Test Mode]: Mismatched predictions saved to {output_csv_file_path}")
 
-        return accuracy
+        return accuracy, f1
 
 
     def __prepare_batch_file(self, input_file_path, instructions, output_batch_file_path):
@@ -167,6 +178,7 @@ class AITagger:
                 f.write(json.dumps(data) + "\n")
         print(f"Batch file prepared at: {output_batch_file_path}")
 
+
     def __upload_batch_file(self, batch_file_path):
         """
         Upload the JSONL file to OpenAI.
@@ -175,6 +187,7 @@ class AITagger:
             response = client.files.create(file=f, purpose="batch")
         print(f"Job file uploaded. File ID for tracking: {response['id']}")
         return response['id']
+
 
     def __create_batch_job(self, file_id, output_file_name):
         """
@@ -245,31 +258,29 @@ class AITagger:
         print(f"Parsed results saved to {output_file_path}")
     
     
-    def run_pipeline(self, input_file_path, tagged_file_path, instructions, 
-                     output_batch_file_path, output_csv_file_path, test_mode=True):
+    def run_pipeline(self, input_file_path, output_batch_file_path, 
+                     output_csv_file_path, test_mode=True):
         """
         Run the complete tagging pipeline: prepare batch file, upload, create job, wait, and download output.
 
         Args:
-            input_file_path (str): Path to the CSV file of the untagged comments.
-            tagged_file_path (str): Path to the manually tagged csv sample file.
-            instructions (str): Instructions for GPT to label the data.
+            input_file_path (str): Path to the CSV file (tagged / untagged comments).
             output_batch_file_path (str): Path to save the JSONL file for the batch job.
             output_csv_file_path (str): Path to save the processed output as a CSV file.
             test_mode (bool): If True, runs up to batch file preparation only for testing.
                             If False, completes the entire process.
 
         Returns:
-            None
+            None. Save tagged file in output_csv_file_path.
         """
         if test_mode:
             print("[Test Mode]: Attempting model on small sample batch")
-            self.__test_model(tagged_file_path, output_csv_file_path)
+            self.__test_model(input_file_path, output_csv_file_path)
         
         else:
             # Proceed with full process in non-test mode
             print("[Pipeline Start]: Initializing tagging process.")
-            self.__prepare_batch_file(input_file_path, instructions, output_batch_file_path)
+            self.__prepare_batch_file(input_file_path, self.system_prompt, output_batch_file_path)
             file_id = self.__upload_batch_file(output_batch_file_path)
             job_id = self.__create_batch_job(file_id, "output.jsonl")
             status = self.__wait_for_batch_completion(job_id)
@@ -293,22 +304,21 @@ if __name__ == "__main__":
     input_file_path = TAGGED_DATA_PATH if TEST_MODE else FULL_DATA_PATH
     batch_file_path = BATCH_FILE_PATH
     output_file_path = OUTPUT_FILE_PATH
-    labeling_instructions = LABELING_INSTRUCTIONS
 
-    # Step 1: Prepare the batch file
-    prepare_batch_file(input_file_path, 
-                       labeling_instructions, 
-                       batch_file_path)
+    # Initiate tagger object
+    tagger = AITagger(
+    engine=OPENAI_ENGINE,
+    temperature=TEMPERATURE,
+    system_prompt=LABELING_INSTRUCTIONS,
+    test_batch_size=TEST_BATCH_SIZE,
+    id_column_idx=0,
+    comment_column_idx=1,
+    label_column_idx=2
+    )
 
-    # Step 2: Upload the batch file
-    uploaded_file_id = upload_batch_file(batch_file_path)
-
-    # Step 3: Create a batch job
-    batch_job_id = create_batch_job(uploaded_file_id, output_file_path=OUTPUT_FILE_PATH)
-
-    # Step 4: Wait for the batch job to complete
-    status = wait_for_batch_completion(batch_job_id)
-
-    # Step 5: Download and parse the output file if completed
-    if status == "completed":
-        download_batch_output(batch_job_id, output_file_path)
+    # Activate
+    tagger.run_pipeline(input_file_path=input_file_path, 
+                        output_batch_file_path=batch_file_path,
+                        output_csv_file_path=output_file_path, 
+                        test_mode=TEST_MODE)
+    

@@ -1,0 +1,7 @@
+# Ignore specific files
+SecretKeys.py
+
+# Ignore an entire folder
+Data/
+venv/
+__pycache__/

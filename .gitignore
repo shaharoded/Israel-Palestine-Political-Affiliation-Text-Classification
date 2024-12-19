@@ -1,5 +1,5 @@
 # Ignore specific files
-SecretKeys.py
+secret_keys.py
 
 # Ignore an entire folder
 Data/

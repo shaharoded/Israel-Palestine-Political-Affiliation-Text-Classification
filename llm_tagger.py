@@ -1,3 +1,8 @@
+'''
+ - Debug problem in sending batches
+ - Finetune the prompt even more
+'''
+
 from openai import OpenAI
 import json
 import csv
@@ -88,7 +93,7 @@ class AITagger:
 
         # Step 1: Read the tagged data
         tagged_data = []
-        with open(tagged_file_path, 'r') as csv_file:
+        with open(tagged_file_path, 'r', encoding="utf-8", errors="ignore") as csv_file:
             reader = csv.reader(csv_file)
             header = next(reader)  # Skip the header
             for row in reader:
@@ -138,7 +143,7 @@ class AITagger:
 
         # Step 6: Save mismatched predictions to a CSV file
         if mismatched_predictions:
-            with open(output_csv_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
+            with open(output_csv_file_path, mode='w', newline='', encoding='utf-8', errors="ignore") as csvfile:
                 csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "comment", "true_label", "predicted_label"])
                 csv_writer.writeheader()
                 csv_writer.writerows(mismatched_predictions)
@@ -152,18 +157,18 @@ class AITagger:
         Prepare a JSONL file for OpenAI Batch API with comment IDs.
         """
         comments = []
-        with open(input_file_path, 'r') as csv_file:
+        with open(input_file_path, 'r', encoding='utf-8', errors="ignore") as csv_file:
             reader = csv.reader(csv_file)
             next(reader)  # Skip the header
             for row in reader:
-                comment_id = row[self.comment_id_idx].strip()
-                comment = row[self.text_comment_idx].strip()
+                comment_id = row[self.id_column_idx].strip()
+                comment = row[self.comment_column_idx].strip()
                 comments.append((comment_id, comment))
 
-        with open(output_batch_file_path, 'w') as f:
+        with open(output_batch_file_path, 'w', encoding='utf-8') as f:
             for comment_id, comment in comments:
                 data = {
-                    "id": comment_id,
+                    "custom_id": comment_id,  # Add the custom_id field
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
@@ -185,23 +190,22 @@ class AITagger:
         """
         with open(batch_file_path, "rb") as f:
             response = client.files.create(file=f, purpose="batch")
-        print(f"Job file uploaded. File ID for tracking: {response['id']}")
-        return response['id']
+        print(f"Job file uploaded. File ID for tracking: {response.id}")
+        return response.id
 
 
-    def __create_batch_job(self, file_id, output_file_name):
+    def __create_batch_job(self, file_id):
         """
         Create a batch job to process the uploaded file.
         """
         response = client.batches.create(
             input_file_id=file_id,
             endpoint="/v1/chat/completions",
-            completion_window="24h",
-            output_file_name=output_file_name
+            completion_window="24h"
         )
-        time.sleep(10)
-        print(f"Batch job created. Job ID: {response['id']}")
-        return response['id']
+        print(f"Batch job created. Job ID: {response.id}")
+        return response.id
+
 
     def __wait_for_batch_completion(self, batch_job_id):
         """
@@ -210,16 +214,26 @@ class AITagger:
         counter = 0
         while True:
             batch_info = client.batches.retrieve(batch_job_id)
-            status = batch_info.get('status')
+            
+            # Safely access the status attribute
+            status = getattr(batch_info, "status", None)
+            
+            if status is None:
+                print("[Error]: Unable to retrieve the status from the batch information.")
+                break
+            
             print(f"Batch status: {status}")
             if status in ["completed", "failed", "cancelled"]:
                 print(f'[Runtime Status]: Job completed, time = {counter+1}h')
                 break
-            time.sleep(3600)
+            
+            time.sleep(60)  # Wait for an hour before checking again
             print(f'[Runtime Status]: Job still in process, time = {counter+1}h')
             counter += 1
+
         print(f"Batch job finished with status: {status}")
         return status
+
 
     def __download_batch_output(self, batch_job_id, output_file_path):
         """
@@ -238,7 +252,7 @@ class AITagger:
             print(f"[Error]: Failed to download file. Status code: {response.status_code}")
             return
 
-        with open(output_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
+        with open(output_file_path, mode='w', newline='', encoding='utf-8', errors="ignore") as csvfile:
             csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "comment", "label"])
             csv_writer.writeheader()
 
@@ -282,7 +296,7 @@ class AITagger:
             print("[Pipeline Start]: Initializing tagging process.")
             self.__prepare_batch_file(input_file_path, self.system_prompt, output_batch_file_path)
             file_id = self.__upload_batch_file(output_batch_file_path)
-            job_id = self.__create_batch_job(file_id, "output.jsonl")
+            job_id = self.__create_batch_job(file_id)
             status = self.__wait_for_batch_completion(job_id)
 
             if status == "completed":
@@ -291,14 +305,24 @@ class AITagger:
                 print(f"[Pipeline Error]: Batch job did not complete successfully. Status: {status}")
 
 
-'''
-If TEST the process should run a few randomally chosen tests (not as batch) and save an
-output file for examination. This should produce the accuracy score, outputting the taggs compared 
-to the real tags in order to allow the user to fine tune the prompt.
+    def debug_batch_failure(self, batch_job_id):
+        """
+        Retrieve details about a failed batch job.
+        """
+        batch_info = client.batches.retrieve(batch_job_id)
 
-If TEST is False run a batch job on all of the data, assuming the prompt was already verified
-and create a tagged file for research based on FULL_DATA_PATH.
-'''
+        # Print detailed information about the batch job
+        print("[Batch Debug]: Batch job details:")
+        print(batch_info)
+
+        # Check if there's an 'error' attribute or log in the response
+        error_details = getattr(batch_info, "error", None)
+        if error_details:
+            print("[Batch Debug]: Error details:")
+            print(error_details)
+        else:
+            print("[Batch Debug]: No specific error details found in batch info.")
+
 if __name__ == "__main__":
     # Define file paths
     input_file_path = TAGGED_DATA_PATH if TEST_MODE else FULL_DATA_PATH
@@ -311,14 +335,20 @@ if __name__ == "__main__":
     temperature=TEMPERATURE,
     system_prompt=LABELING_INSTRUCTIONS,
     test_batch_size=TEST_BATCH_SIZE,
-    id_column_idx=0,
-    comment_column_idx=1,
-    label_column_idx=2
+    id_column_idx=ID_COLUMN_IDX,
+    comment_column_idx=COMMENT_COLUMN_IDX,
+    label_column_idx=LABEL_COLUMN_IDX
     )
 
-    # Activate
-    tagger.run_pipeline(input_file_path=input_file_path, 
-                        output_batch_file_path=batch_file_path,
-                        output_csv_file_path=output_file_path, 
-                        test_mode=TEST_MODE)
+    # # Activate
+    # tagger.run_pipeline(input_file_path=input_file_path, 
+    #                     output_batch_file_path=batch_file_path,
+    #                     output_csv_file_path=output_file_path, 
+    #                     test_mode=TEST_MODE)
+    
+    tagger.debug_batch_failure('batch_6764a476d704819085d8b6148445db3c')
+    batches = client.batches.list()
+    for batch in batches.data:
+        print(f"Batch ID: {batch.id}, Status: {batch.status}, Tokens: {batch.token_count}")
+    
     

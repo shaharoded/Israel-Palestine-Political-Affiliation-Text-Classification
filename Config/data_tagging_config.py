@@ -6,12 +6,12 @@ OUTPUT_FILE_PATH = 'Data/research_data_tagged.csv'  # Path to save tagged commen
 COMMENT_ID_COLUMN_IDX = 0
 TEXT_COMMENT_COLUMN_IDX = 1   # The column where the raw text is in the file to be tagged
 
-# Labeling Configurations
-OPENAI_ENGINE = 'gpt-4o-mini'
-TEMPERATURE = 0.0
-BATCH_SIZE = 10
-TEST_MODE = True    # Will shrink the batch size, use the manually_tagged_data and calculate accuracy
-
+# Labels
+LABELS_DECODER = {
+    "0": "Pro-Palestine",
+    "1": "Pro-Israel",
+    "2": "Undefined"
+}
 
 # Prompt / for the Prompt
 LABELING_INSTRUCTIONS = """
@@ -25,3 +25,11 @@ LABELING_INSTRUCTIONS = """
     3. "2" - You can't define the political affiliation with confidence, or not sure that the comment is relevant to this conflict.
     Only respond with one of the labels (0, 1, or 2).
     """
+    
+
+# LLM Configurations
+OPENAI_ENGINE = 'gpt-4o-mini'
+TEMPERATURE = 0.0   # Level of randomness / creativity of the comment. Set to 0 to return the same response every time.
+
+TEST_BATCH_SIZE = 10    # Number of comments for a single test of the model
+TEST_MODE = True    # Will shrink the batch size, use the manually_tagged_data and calculate accuracy

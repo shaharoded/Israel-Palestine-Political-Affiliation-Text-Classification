@@ -1,5 +1,5 @@
 '''
- - Debug problem in sending batches
+ - Debug problem in sending and deleting batches
  - Finetune the prompt even more
 '''
 
@@ -209,7 +209,7 @@ class AITagger:
 
     def __wait_for_batch_completion(self, batch_job_id):
         """
-        Wait for the batch job to complete.
+        Wait for the batch job to complete. Delete the job if it fails.
         """
         counter = 0
         while True:
@@ -232,6 +232,16 @@ class AITagger:
             counter += 1
 
         print(f"Batch job finished with status: {status}")
+
+        # Delete the job if it failed
+        if status == "failed":
+            try:
+                self.debug_batch_failure(batch_job_id)
+                client.batches.delete(batch_job_id)
+                print(f"[Runtime Status]: Batch job {batch_job_id} deleted due to failure.")
+            except Exception as e:
+                print(f"[Error]: Failed to delete batch job {batch_job_id}. Error: {e}")
+        
         return status
 
 
@@ -346,9 +356,12 @@ if __name__ == "__main__":
     #                     output_csv_file_path=output_file_path, 
     #                     test_mode=TEST_MODE)
     
-    tagger.debug_batch_failure('batch_6764a476d704819085d8b6148445db3c')
+    # tagger.debug_batch_failure('batch_6764a476d704819085d8b6148445db3c')
+    # batches = client.batches.list()
+    # for batch in batches.data:
+    #     print(f"Batch ID: {batch.id}, Status: {batch.status}, Tokens: {batch.token_count}")
+    
     batches = client.batches.list()
     for batch in batches.data:
-        print(f"Batch ID: {batch.id}, Status: {batch.status}, Tokens: {batch.token_count}")
-    
+        client.batches.delete(batch.id)
     

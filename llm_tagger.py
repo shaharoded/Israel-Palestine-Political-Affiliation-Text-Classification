@@ -350,18 +350,14 @@ if __name__ == "__main__":
     label_column_idx=LABEL_COLUMN_IDX
     )
 
-    # # Activate
-    # tagger.run_pipeline(input_file_path=input_file_path, 
-    #                     output_batch_file_path=batch_file_path,
-    #                     output_csv_file_path=output_file_path, 
-    #                     test_mode=TEST_MODE)
+    # Activate
+    tagger.run_pipeline(input_file_path=input_file_path, 
+                        output_batch_file_path=batch_file_path,
+                        output_csv_file_path=output_file_path, 
+                        test_mode=TEST_MODE)
     
     # tagger.debug_batch_failure('batch_6764a476d704819085d8b6148445db3c')
     # batches = client.batches.list()
     # for batch in batches.data:
     #     print(f"Batch ID: {batch.id}, Status: {batch.status}, Tokens: {batch.token_count}")
-    
-    batches = client.batches.list()
-    for batch in batches.data:
-        client.batches.delete(batch.id)
     

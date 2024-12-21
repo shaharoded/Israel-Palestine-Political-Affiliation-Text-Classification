@@ -8,7 +8,8 @@ import json
 import csv
 import time
 import random
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
+import pandas as pd
 
 # Local Code
 from secret_keys import OPENAI_API_KEY
@@ -141,7 +142,14 @@ class AITagger:
         )
         print(f"[Test Mode]: F1 Score on test batch: {f1:.2f}")
 
-        # Step 6: Save mismatched predictions to a CSV file
+        # Step 6: Generate and print confusion matrix
+        print("[Test Mode]: Confusion Matrix:")
+        labels = sorted(set(true_labels))  # Ensure consistent label order
+        cm = confusion_matrix(true_labels, predicted_labels, labels=labels)
+        cm_df = pd.DataFrame(cm, index=labels, columns=labels)
+        print(cm_df)
+
+        # Step 7: Save mismatched predictions to a CSV file
         if mismatched_predictions:
             with open(output_csv_file_path, mode='w', newline='', encoding='utf-8', errors="ignore") as csvfile:
                 csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "comment", "true_label", "predicted_label"])

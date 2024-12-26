@@ -4,7 +4,7 @@
 '''
 
 from openai import OpenAI
-import tiktoken
+from transformers import BertTokenizer
 import json
 import csv
 import time
@@ -19,6 +19,7 @@ from Config.data_tagging_config import *
 
 # Set your OpenAI API key in a SecretKeys.py file
 client = OpenAI(api_key=OPENAI_API_KEY)
+TOKENIZER = BertTokenizer.from_pretrained('bert-base-cased')
 
 
 class AITagger:
@@ -54,12 +55,12 @@ class AITagger:
         self.label_column_idx = label_column_idx
 
     
-    def __count_tokens(self, text, model=OPENAI_ENGINE):
+    def __count_tokens(self, text):
         """
         Assess the number of tokens in a text.
         """
-        encoding = tiktoken.encoding_for_model(model)
-        return len(encoding.encode(text))
+        encoding = TOKENIZER.tokenize(text)
+        return len(encoding)
 
 
     def __generate_response(self, comment):
@@ -189,20 +190,21 @@ class AITagger:
             for comment_id, comment in comments:
                 if self.__count_tokens(comment) >= MAX_COMMENT_LENGTH:
                     continue
-                data = {
-                    "custom_id": comment_id,  # Add the custom_id field
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": self.engine,
-                        "messages": [
-                            {"role": "system", "content": instructions},
-                            {"role": "user", "content": f"Comment: {comment}"}
-                        ],
-                        "temperature": self.temperature
+                else:
+                    data = {
+                        "custom_id": comment_id,  # Add the custom_id field
+                        "method": "POST",
+                        "url": "/v1/chat/completions",
+                        "body": {
+                            "model": self.engine,
+                            "messages": [
+                                {"role": "system", "content": instructions},
+                                {"role": "user", "content": f"Comment: {comment}"}
+                            ],
+                            "temperature": self.temperature
+                        }
                     }
-                }
-                f.write(json.dumps(data) + "\n")
+                    f.write(json.dumps(data) + "\n")
         print(f"Batch file prepared at: {output_batch_file_path}")
 
 

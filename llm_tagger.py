@@ -367,11 +367,8 @@ if __name__ == "__main__":
     label_column_idx=LABEL_COLUMN_IDX
     )
 
-    # # Activate
-    # tagger.run_pipeline(input_file_path=input_file_path, 
-    #                     output_batch_file_path=batch_file_path,
-    #                     output_csv_file_path=output_file_path, 
-    #                     test_mode=TEST_MODE)
-    
-    tagger.download_batch_output('batch_676d9305d8948190938b6cf700a24a6d', output_file_path)
-    
+    # Activate
+    tagger.run_pipeline(input_file_path=input_file_path, 
+                        output_batch_file_path=batch_file_path,
+                        output_csv_file_path=output_file_path, 
+                        test_mode=TEST_MODE)    

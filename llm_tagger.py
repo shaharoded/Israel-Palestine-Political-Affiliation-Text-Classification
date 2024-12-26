@@ -163,6 +163,7 @@ class AITagger:
     def __prepare_batch_file(self, input_file_path, instructions, output_batch_file_path):
         """
         Prepare a JSONL file for OpenAI Batch API with comment IDs.
+        Return value will have the comment ID for merge with original dataset.
         """
         comments = []
         with open(input_file_path, 'r', encoding='utf-8', errors="ignore") as csv_file:
@@ -232,10 +233,10 @@ class AITagger:
             
             print(f"Batch status: {status}")
             if status in ["completed", "failed", "cancelled"]:
-                print(f'[Runtime Status]: Job completed, time = {counter+1}h')
+                print(f'[Runtime Status]: Job completed, time = {counter+1}m')
                 break
             
-            time.sleep(60)  # Wait for an hour before checking again
+            time.sleep(60)  # Wait for a few minutes before checking again
             print(f'[Runtime Status]: Job still in process, time = {counter+1}h')
             counter += 1
 
@@ -257,30 +258,38 @@ class AITagger:
         """
         Download the output file for the completed batch job, parse its contents,
         and save the results to a CSV file.
+        Parsed content will have commentID and label (the tagger response). 
+        You'll need to merge this output with the original file.
         """
         batch_info = client.batches.retrieve(batch_job_id)
-        output_file_url = batch_info.get('output_file_url')
-
-        if not output_file_url:
-            print("[Error]: Output file URL not available.")
+        
+        # Print the full batch_info to debug
+        print("[Debug]: Batch Info:")
+        print(batch_info)
+        
+        # Retrieve the output_file_id
+        output_file_id = getattr(batch_info, 'output_file_id', None)
+        if not output_file_id:
+            print("[Error]: Output file ID not available.")
             return
 
-        response = client.files.content(output_file_url)
-        if response.status_code != 200:
-            print(f"[Error]: Failed to download file. Status code: {response.status_code}")
+        # Fetch the file content using the output_file_id
+        try:
+            response = client.files.content(output_file_id)
+        except Exception as e:
+            print(f"[Error]: Failed to download file content. Error: {e}")
             return
 
         with open(output_file_path, mode='w', newline='', encoding='utf-8', errors="ignore") as csvfile:
-            csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "comment", "label"])
+            csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "label"])
             csv_writer.writeheader()
 
             for line in response.text.splitlines():
                 try:
                     result = json.loads(line)
                     csv_writer.writerow({
-                        "comment_id": result['id'],
-                        "comment": result['input']['messages'][-1]['content'],
-                        "label": result['result']['choices'][0]['message']['content']
+                        "comment_id": result['custom_id'],
+                        "label": LABELS_DECODER.get(result['response']['body']['choices'][0]['message']['content'], None)
                     })
                 except KeyError as e:
                     print(f"[Error]: Missing expected key in result. {e}")
@@ -358,14 +367,11 @@ if __name__ == "__main__":
     label_column_idx=LABEL_COLUMN_IDX
     )
 
-    # Activate
-    tagger.run_pipeline(input_file_path=input_file_path, 
-                        output_batch_file_path=batch_file_path,
-                        output_csv_file_path=output_file_path, 
-                        test_mode=TEST_MODE)
+    # # Activate
+    # tagger.run_pipeline(input_file_path=input_file_path, 
+    #                     output_batch_file_path=batch_file_path,
+    #                     output_csv_file_path=output_file_path, 
+    #                     test_mode=TEST_MODE)
     
-    # tagger.debug_batch_failure('batch_6764a476d704819085d8b6148445db3c')
-    # batches = client.batches.list()
-    # for batch in batches.data:
-    #     print(f"Batch ID: {batch.id}, Status: {batch.status}, Tokens: {batch.token_count}")
+    tagger.download_batch_output('batch_676d9305d8948190938b6cf700a24a6d', output_file_path)
     

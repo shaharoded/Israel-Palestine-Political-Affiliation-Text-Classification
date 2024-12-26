@@ -42,7 +42,8 @@ LABELING_INSTRUCTIONS = f"""
 
 # LLM Configurations
 OPENAI_ENGINE = 'gpt-4o-mini'
+MAX_COMMENT_LENGTH = 500    # To avoid comments which are too long, limit length.
 TEMPERATURE = 0.0   # Level of randomness / creativity of the comment. Set to 0 to return the same response every time.
 
-TEST_BATCH_SIZE = 10    # Number of comments for a single test of the model
+TEST_BATCH_SIZE = 20    # Number of comments for a single test of the model
 TEST_MODE = False    # Will shrink the batch size, use the manually_tagged_data and calculate accuracy

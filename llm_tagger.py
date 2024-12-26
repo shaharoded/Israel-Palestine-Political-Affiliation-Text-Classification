@@ -4,6 +4,7 @@
 '''
 
 from openai import OpenAI
+import tiktoken
 import json
 import csv
 import time
@@ -51,12 +52,22 @@ class AITagger:
         self.id_column_idx = id_column_idx
         self.comment_column_idx = comment_column_idx
         self.label_column_idx = label_column_idx
+
     
-    
+    def __count_tokens(self, text, model=OPENAI_ENGINE):
+        """
+        Assess the number of tokens in a text.
+        """
+        encoding = tiktoken.encoding_for_model(model)
+        return len(encoding.encode(text))
+
+
     def __generate_response(self, comment):
         """
         Modified function to work with the openai API to generate a response for a single prompt.
         """
+        if self.__count_tokens(comment) >= MAX_COMMENT_LENGTH:
+            return 'Comment is too long for classification'
         output = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": [{'type': 'text', 'text': self.system_prompt}]},
@@ -176,6 +187,8 @@ class AITagger:
 
         with open(output_batch_file_path, 'w', encoding='utf-8') as f:
             for comment_id, comment in comments:
+                if self.__count_tokens(comment) >= MAX_COMMENT_LENGTH:
+                    continue
                 data = {
                     "custom_id": comment_id,  # Add the custom_id field
                     "method": "POST",
@@ -349,6 +362,8 @@ class AITagger:
             print(error_details)
         else:
             print("[Batch Debug]: No specific error details found in batch info.")
+            
+
 
 if __name__ == "__main__":
     # Define file paths
@@ -371,4 +386,4 @@ if __name__ == "__main__":
     tagger.run_pipeline(input_file_path=input_file_path, 
                         output_batch_file_path=batch_file_path,
                         output_csv_file_path=output_file_path, 
-                        test_mode=TEST_MODE)    
+                        test_mode=TEST_MODE)  

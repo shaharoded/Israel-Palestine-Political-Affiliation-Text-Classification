@@ -1,7 +1,7 @@
 # Locations
 FULL_DATA_PATH = 'Data/research_data.csv'
 TAGGED_DATA_PATH = 'Data/manually_tagged_data.csv'
-BATCH_FILE_PATH = 'Data/batch_file_for_job.jsonl'   # Path to save jsonl file for batch job
+BATCH_FILE_PATH = 'Data/Batches/mini_batch_{}.jsonl'   # Path to save jsonl file for batch job
 OUTPUT_FILE_PATH = 'Data/research_data_tagged.csv'  # Path to save tagged comments
 ID_COLUMN_IDX = 0
 COMMENT_COLUMN_IDX = 1   # The column where the raw text is in the file to be tagged
@@ -45,5 +45,5 @@ OPENAI_ENGINE = 'gpt-4o-mini'
 MAX_COMMENT_LENGTH = 500    # To avoid comments which are too long, limit length.
 TEMPERATURE = 0.0   # Level of randomness / creativity of the comment. Set to 0 to return the same response every time.
 
-TEST_BATCH_SIZE = 20    # Number of comments for a single test of the model
+TEST_BATCH_SIZE = 10    # Number of comments for a single test of the model
 TEST_MODE = False    # Will shrink the batch size, use the manually_tagged_data and calculate accuracy

@@ -9,6 +9,7 @@ import pandas as pd
 input_file = r"C:\Users\shaha\Projects\Python Projects\Israel-Palestine-Political-Affiliation-Text-Classification\Data\full_dataset_untagged.csv"
 output_file = r"C:\Users\shaha\Projects\Python Projects\Israel-Palestine-Political-Affiliation-Text-Classification\Data\research_data.csv"
 
+
 # Columns to keep
 columns_to_keep = ["comment_id", "self_text", "created_time", "subreddit", "post_id", "author_name"]
 

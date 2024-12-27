@@ -2,6 +2,7 @@
  - Split big job to mini-jobs in designated folder and combine
 '''
 
+import openai
 from openai import OpenAI
 from transformers import BertTokenizer
 import json
@@ -201,23 +202,28 @@ class AITagger:
         """
         counter = 0
         while True:
-            batch_info = client.batches.retrieve(batch_job_id)
-            
-            # Safely access the status attribute
-            status = getattr(batch_info, "status", None)
-            
-            if status is None:
-                print("[Error]: Unable to retrieve the status from the batch information.")
-                break
-            
-            print(f"Batch status: {status}")
-            if status in ["completed", "failed", "cancelled"]:
-                print(f'[Job Status]: Job completed, time = {counter+1}m')
-                break
-            
-            time.sleep(60)  # Wait for a few minutes before checking again
-            print(f'[Job Status]: Job still in process, time = {counter+1}m')
-            counter += 1
+            try:
+                batch_info = client.batches.retrieve(batch_job_id)
+                
+                # Safely access the status attribute
+                status = getattr(batch_info, "status", None)
+                
+                if status is None:
+                    print("[Error]: Unable to retrieve the status from the batch information.")
+                    break
+                
+                if status in ["completed", "failed", "cancelled"]:
+                    print(f'[Job Status]: Job completed, time = {counter+1}m')
+                    break
+                
+                print(f'[Job Status]: Job still in process, status = {status}, time = {counter}m')
+                counter += 1
+                time.sleep(60)  # Wait a little before checking again
+            except openai.error.APIConnectionError as e:
+                print(f"[Warning]: Connection error on mini-batch, check your internet connection. Will retry in 60 seconds")
+                counter += 1
+                time.sleep(60)
+                
 
         print(f"[Job Status]: Batch job finished with status: {status}")
 
@@ -274,14 +280,15 @@ class AITagger:
         print(f"[Job Status]: Parsed results saved to {output_file_path}")
     
         
-    def __prepare_and_process_batches(self, input_file_path, batch_file_path_template, instructions, output_csv_file_path, batch_size=200):
+    def __prepare_and_process_batches(self, input_file_path, batch_file_path_template, instructions, output_csv_file_path, batch_size=400):
         """
         Split the input file into smaller mini-batches, upload each as a JSONL file,
         and concatenate their outputs into a single CSV file.
 
         Args:
             input_file_path (str): Path to the CSV file with comments.
-            batch_file_path_template (str): Template for saving batch JSONL files (e.g., 'Data/Batches/mini_batch_{}.jsonl').            instructions (str): Labeling instructions for the model.
+            batch_file_path_template (str): Template for saving batch JSONL files (e.g., 'Data/Batches/mini_batch_{}.jsonl').            
+            instructions (str): Labeling instructions for the model.
             output_csv_file_path (str): Path to save the combined output.
             batch_size (int): Maximum number of entries per mini-batch.
         """

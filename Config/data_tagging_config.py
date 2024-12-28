@@ -43,7 +43,22 @@ LABELING_INSTRUCTIONS = f"""
 # LLM Configurations
 OPENAI_ENGINE = 'gpt-4o-mini'
 MAX_COMMENT_LENGTH = 500    # To avoid comments which are too long, limit length.
+BATCH_TOKENS_LIMIT = 1000000   # Based on OpenAI limitations which are 2,000,000. Account for calculation method and 1 additional comment after batch is too long.
+BATCH_REQUESTS_LIMIT = 50000    # Limit to the number of requests in a single batch
 TEMPERATURE = 0.0   # Level of randomness / creativity of the comment. Set to 0 to return the same response every time.
+BATCH_ROW_FORMAT = {
+    "custom_id": "{comment_id}",
+    "method": "POST",
+    "url": "/v1/chat/completions",
+    "body": {
+        "model": OPENAI_ENGINE,
+        "messages": [
+            {"role": "system", "content": LABELING_INSTRUCTIONS},
+            {"role": "user", "content": "Comment: {comment}"}
+        ],
+        "temperature": TEMPERATURE
+    }
+}
 
 TEST_BATCH_SIZE = 10    # Number of comments for a single test of the model
 TEST_MODE = False    # Will shrink the batch size, use the manually_tagged_data and calculate accuracy

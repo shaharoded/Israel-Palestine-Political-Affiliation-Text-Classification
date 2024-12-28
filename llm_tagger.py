@@ -10,6 +10,7 @@ import csv
 import time
 import os
 import random
+from copy import deepcopy
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import pandas as pd
 
@@ -31,7 +32,7 @@ class AITagger:
     which will provide a tag on a small subset of the data and accuracy score.
     Modify parameters in the config file.
     '''
-    def __init__(self, engine, temperature, system_prompt, test_batch_size,
+    def __init__(self, batch_row_format, test_batch_size,
                  id_column_idx=0, comment_column_idx=1, label_column_idx = None):
         """
         Initialize the AITagger instance.
@@ -47,9 +48,8 @@ class AITagger:
             comment_column_idx (int): Column index for comments in the input file.
             label_column_idx (int) : Column index for manual labels in the tagged train file.
         """
-        self.engine = engine
-        self.temperature = temperature
-        self.system_prompt = system_prompt
+        self.batch_row_format = batch_row_format
+        self.system_prompt_length = self.__count_tokens(json.dumps(batch_row_format)) # Calculate length of batch row structure
         self.test_batch_size = test_batch_size
         self.id_column_idx = id_column_idx
         self.comment_column_idx = comment_column_idx
@@ -72,12 +72,12 @@ class AITagger:
             return 'Comment is too long for classification'
         output = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": [{'type': 'text', 'text': self.system_prompt}]},
+                {"role": "system", "content": [{'type': 'text', 'text': self.batch_row_format.get("body", {}).get("messages", [])[0].get("content", None)}]},
                 {"role": "user", "content": [{'type': 'text', 'text': f'Comment: {comment}'}]},
             ],
-            model=self.engine,
+            model=self.batch_row_format.get("body",{}).get("model", None),
             #max_tokens=self.engine_max_tokens,
-            temperature=self.temperature,  # How "creative" with variaced responses
+            temperature=self.batch_row_format.get("body",{}).get("temperature", 0.0),  # How "creative" with variaced responses
             response_format={
                 "type": "text"
             }
@@ -219,7 +219,7 @@ class AITagger:
                 print(f'[Job Status]: Job still in process, status = {status}, time = {counter}m')
                 counter += 1
                 time.sleep(60)  # Wait a little before checking again
-            except openai.error.APIConnectionError as e:
+            except openai.APIConnectionError:
                 print(f"[Warning]: Connection error on mini-batch, check your internet connection. Will retry in 60 seconds")
                 counter += 1
                 time.sleep(60)
@@ -229,12 +229,7 @@ class AITagger:
 
         # Delete the job if it failed
         if status == "failed":
-            try:
-                self.debug_batch_failure(batch_job_id)
-                client.batches.delete(batch_job_id)
-                print(f"[Job Status]: Batch job {batch_job_id} deleted due to failure.")
-            except Exception as e:
-                print(f"[Error]: Failed to delete batch job {batch_job_id}. Error: {e}")
+            self.debug_batch_failure(batch_job_id)
         
         return status
 
@@ -279,8 +274,58 @@ class AITagger:
 
         print(f"[Job Status]: Parsed results saved to {output_file_path}")
     
+    
+    def __process_batch(self, batch_comments, batch_file_path, output_csv_file_path):
+        """
+        Process a single batch: upload, execute, and append the output.
+
+        Args:
+            batch_comments (list): List of tuples containing comment IDs and comments.
+            batch_file_path (str): Path for saving the batch JSONL file.
+            output_csv_file_path (str): Path to save the combined output.
+        """
+        # Write the batch to a JSONL file
+        with open(batch_file_path, 'w', encoding='utf-8') as f:
+            for comment_id, comment in batch_comments:
+                batch_row = deepcopy(self.batch_row_format)
+                batch_row["custom_id"] = comment_id
+                batch_row["body"]["model"] = self.batch_row_format.get("body",{}).get("model", None)
+                batch_row["body"]["temperature"] = self.batch_row_format.get("body",{}).get("temperature", 0.0)
+                batch_row["body"]["messages"][0]["content"] = self.batch_row_format.get("body", {}).get("messages", [])[0].get("content", None)
+                batch_row["body"]["messages"][1]["content"] = f"Comment: {comment}"                
+                f.write(json.dumps(batch_row) + "\n")
+
+        # Submit the batch job
+        file_id = self.__upload_batch_file(batch_file_path)
+        job_id = self.__create_batch_job(file_id)
+
+        print(f"[Job Status]: Submitted batch job {job_id}. Waiting for completion.")
         
-    def __prepare_and_process_batches(self, input_file_path, batch_file_path_template, instructions, output_csv_file_path, batch_size=400):
+        # Wait for job completion
+        status = self.__wait_for_batch_completion(job_id)
+
+        if status == "completed":
+            # Download and process the output
+            temp_output_file = f"batch_output_{job_id}.csv"
+            self.__download_batch_output(job_id, temp_output_file)
+
+            # Append results to the combined output file
+            with open(temp_output_file, 'r', encoding='utf-8', errors='ignore') as temp_csvfile:
+                temp_reader = csv.DictReader(temp_csvfile)
+                with open(output_csv_file_path, mode='a', newline='', encoding='utf-8') as combined_csvfile:
+                    combined_writer = csv.DictWriter(combined_csvfile, fieldnames=["comment_id", "label"])
+                    for row in temp_reader:
+                        combined_writer.writerow(row)
+
+            # Optionally delete temporary files
+            os.remove(temp_output_file)
+            os.remove(batch_file_path)
+            print(f"[Job Status]: Batch job {job_id} completed and output saved.")
+        else:
+            print(f"[Pipeline Error]: Batch job {job_id} failed with status: {status}")
+        
+        
+    def __batch_process_dataset(self, input_file_path, batch_file_path_template, output_csv_file_path):
         """
         Split the input file into smaller mini-batches, upload each as a JSONL file,
         and concatenate their outputs into a single CSV file.
@@ -304,62 +349,48 @@ class AITagger:
             for row in reader:
                 comment_id = row[self.id_column_idx].strip()
                 comment = row[self.comment_column_idx].strip()
-                if self.__count_tokens(comment) < MAX_COMMENT_LENGTH:
-                    comments.append((comment_id, comment))
+                comments.append((comment_id, comment))
 
         # Open the combined output file in write mode initially
         with open(output_csv_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
             csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "label"])
             csv_writer.writeheader()  # Write header only once
+        
+        # Cleanup existing batches (prior failures / undocumented batches)
+        # Iterate through batches and cancel active or in-progress ones
+        batches = client.batches.list()
+        for batch in batches.data:        
+            batch_id = getattr(batch, 'id', None)
+            status = getattr(batch, 'status', None)
+            if status in ["in_progress", "queued"]:
+                print(f"[Cleanup Status]: Existing batch {batch_id} with status: {status}. Canceling...")
+                client.batches.cancel(batch_id)
 
-        # Split comments into mini-batches
-        for i in range(0, len(comments), batch_size):
-            mini_batch = comments[i:i + batch_size]
-            batch_file_path = batch_file_path_template.format(i // batch_size + 1)
+        # Initialize batch processing
+        batch_index = 0
+        total_tokens = 0
+        batch_comments = []
+        print("[Job Status]: Starting batch processing...")
+        for idx, (comment_id, comment) in enumerate(comments):
+            comment_tokens = self.__count_tokens(comment)
+            if comment_tokens < MAX_COMMENT_LENGTH:
+                total_tokens += comment_tokens + self.system_prompt_length
+            
+                # Add the comment to the current batch
+                batch_comments.append((comment_id, comment))
+            
+                # Check if token limit is reached or if this is the last comment
+                # Pass batches of size +- BATCH_TOKENS_LIMIT
+                if total_tokens >= BATCH_TOKENS_LIMIT or len(batch_comments) >= 0.95 * BATCH_REQUESTS_LIMIT or idx == len(comments) - 1:
+                    # Process the current batch
+                    self.__process_batch(batch_comments, batch_file_path_template.format(batch_index), output_csv_file_path)
+                    
+                    # Reset for the next batch
+                    batch_index += 1
+                    total_tokens = 0
+                    batch_comments = []
 
-            # Write the mini-batch to a JSONL file
-            with open(batch_file_path, 'w', encoding='utf-8') as f:
-                for comment_id, comment in mini_batch:
-                    data = {
-                        "custom_id": comment_id,
-                        "method": "POST",
-                        "url": "/v1/chat/completions",
-                        "body": {
-                            "model": self.engine,
-                            "messages": [
-                                {"role": "system", "content": instructions},
-                                {"role": "user", "content": f"Comment: {comment}"}
-                            ],
-                            "temperature": self.temperature
-                        }
-                    }
-                    f.write(json.dumps(data) + "\n")
-
-            # Process the mini-batch
-            print(f"[Job Status]: Processing mini-batch {i // batch_size + 1}")
-            file_id = self.__upload_batch_file(batch_file_path)
-            job_id = self.__create_batch_job(file_id)
-            status = self.__wait_for_batch_completion(job_id)
-
-            # Handle the output if the job is completed
-            if status == "completed":
-                temp_output_file = f"mini_batch_output_{i // batch_size + 1}.csv"
-                self.__download_batch_output(job_id, temp_output_file)
-
-                # Append results to the combined output file
-                with open(temp_output_file, 'r', encoding='utf-8', errors='ignore') as temp_csvfile:
-                    temp_reader = csv.DictReader(temp_csvfile)
-                    with open(output_csv_file_path, mode='a', newline='', encoding='utf-8') as combined_csvfile:
-                        combined_writer = csv.DictWriter(combined_csvfile, fieldnames=["comment_id", "label"])
-                        for row in temp_reader:
-                            combined_writer.writerow(row)
-
-                # Optionally delete the temporary file after appending
-                os.remove(temp_output_file)
-                # Delete the JSONL batch file on success
-                os.remove(batch_file_path)
-            else:
-                print(f"[Pipeline Error]: Mini-batch {i // batch_size + 1} failed with status: {status}")
+        print("[Job Status]: Completed processing all batches.")
 
 
     def run_pipeline(self, input_file_path, batch_file_path, output_csv_file_path, test_mode=True):
@@ -376,7 +407,7 @@ class AITagger:
             self.__test_model(input_file_path, output_csv_file_path)
         else:
             print("[Pipeline Start]: Processing mini-batches")
-            self.__prepare_and_process_batches(input_file_path, batch_file_path, self.system_prompt, output_csv_file_path)
+            self.__batch_process_dataset(input_file_path, batch_file_path, output_csv_file_path)
 
 
     def debug_batch_failure(self, batch_job_id):
@@ -407,9 +438,7 @@ if __name__ == "__main__":
 
     # Initiate tagger object
     tagger = AITagger(
-    engine=OPENAI_ENGINE,
-    temperature=TEMPERATURE,
-    system_prompt=LABELING_INSTRUCTIONS,
+    batch_row_format=BATCH_ROW_FORMAT,
     test_batch_size=TEST_BATCH_SIZE,
     id_column_idx=ID_COLUMN_IDX,
     comment_column_idx=COMMENT_COLUMN_IDX,
@@ -421,3 +450,5 @@ if __name__ == "__main__":
                         batch_file_path=batch_file_path,
                         output_csv_file_path=output_file_path, 
                         test_mode=TEST_MODE)  
+        
+        

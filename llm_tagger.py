@@ -306,7 +306,7 @@ class AITagger:
 
         if status == "completed":
             # Download and process the output
-            temp_output_file = f"batch_output_{job_id}.csv"
+            temp_output_file = os.path.join("Data", os.path.splitext(os.path.basename(batch_file_path))[0] + ".csv")
             self.__download_batch_output(job_id, temp_output_file)
 
             # Append results to the combined output file

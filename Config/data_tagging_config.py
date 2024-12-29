@@ -1,8 +1,8 @@
 # Locations
-FULL_DATA_PATH = 'Data/research_data.csv'
+FULL_DATA_PATH = 'Data/research_data_untagged.csv'
 TAGGED_DATA_PATH = 'Data/manually_tagged_data.csv'
 BATCH_FILE_PATH = 'Data/Batches/mini_batch_{}.jsonl'   # Path to save jsonl file for batch job
-OUTPUT_FILE_PATH = 'Data/research_data_tagged.csv'  # Path to save tagged comments
+OUTPUT_FILE_PATH = 'Data/research_data_autotagged.csv'  # Path to save tagged comments
 ID_COLUMN_IDX = 0
 COMMENT_COLUMN_IDX = 1   # The column where the raw text is in the file to be tagged
 LABEL_COLUMN_IDX = 6    # The column where the label for the comment is (on tagged data only)

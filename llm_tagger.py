@@ -1,7 +1,3 @@
-'''
- - Split big job to mini-jobs in designated folder and combine
-'''
-
 import openai
 from openai import OpenAI
 from transformers import BertTokenizer
@@ -216,7 +212,7 @@ class AITagger:
                     print(f'[Job Status]: Job completed, time = {counter+1}m')
                     break
                 
-                print(f'[Job Status]: Job still in process, status = {status}, time = {counter}m')
+                print(f'[Job Status]: Job still in process, status = {status}, time = {counter + 1}m')
                 counter += 1
                 time.sleep(60)  # Wait a little before checking again
             except openai.APIConnectionError:

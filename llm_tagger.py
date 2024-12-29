@@ -290,7 +290,7 @@ class AITagger:
                 batch_row["body"]["messages"][0]["content"] = self.batch_row_format.get("body", {}).get("messages", [])[0].get("content", None)
                 batch_row["body"]["messages"][1]["content"] = f"Comment: {comment}"                
                 f.write(json.dumps(batch_row) + "\n")
-
+        
         # Submit the batch job
         file_id = self.__upload_batch_file(batch_file_path)
         job_id = self.__create_batch_job(file_id)
@@ -346,7 +346,7 @@ class AITagger:
                 comment_id = row[self.id_column_idx].strip()
                 comment = row[self.comment_column_idx].strip()
                 comments.append((comment_id, comment))
-
+        
         # Open the combined output file in write mode initially
         with open(output_csv_file_path, mode='w', newline='', encoding='utf-8') as csvfile:
             csv_writer = csv.DictWriter(csvfile, fieldnames=["comment_id", "label"])

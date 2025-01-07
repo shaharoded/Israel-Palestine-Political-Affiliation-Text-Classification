@@ -1,6 +1,7 @@
 # Ignore specific files
 secret_keys.py
 subset_data.py
+augmented_dataset_tmp.csv
 
 # Ignore an entire folder
 Data/

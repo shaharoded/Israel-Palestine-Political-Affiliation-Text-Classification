@@ -1,4 +1,5 @@
 import pandas as pd
+from tqdm import tqdm
 import random
 import re
 import contractions
@@ -32,13 +33,23 @@ class TextDataset(Dataset):
         self.data = self.__augment_data()
 
     def __load_and_filter_data(self):
-        df = pd.read_csv(self.data_path)
+        print(f'[Dataset Status]: Loading the dataset...')
+        try:
+            # Try reading with utf-8 encoding
+            df = pd.read_csv(self.data_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            # Fallback to another encoding if utf-8 fails
+            df = pd.read_csv(self.data_path, encoding='ISO-8859-1')
         subset_data = df[df.iloc[:, self.subset_column_idx] == self.subset]
         return subset_data
 
     def __preprocess_data(self):
-        # Apply text preprocessing to the comment column
-        self.data.iloc[:, self.comment_column_idx] = self.data.iloc[:, self.comment_column_idx].apply(self.preprocess_text)
+        """
+        Apply text preprocessing to the comment column with a progress bar.
+        """
+        # Wrap the progress bar around the column iteration
+        tqdm.pandas(desc="Preprocessing comments")
+        self.data.iloc[:, self.comment_column_idx] = self.data.iloc[:, self.comment_column_idx].progress_apply(self.preprocess_text)
         return self.data
 
     @staticmethod
@@ -91,15 +102,20 @@ class TextDataset(Dataset):
         return list(synonyms)
 
     def __augment_data(self):
+        """
+        Augment the data with a progress bar to track augmentation progress.
+        """
         augmented_data = []
-        for _, row in self.data.iterrows():
+        for idx, row in tqdm(self.data.iterrows(), total=len(self.data), desc="Augmenting data", unit="row"):
+            original_id = row.iloc[self.id_column_idx]
             comment = row.iloc[self.comment_column_idx]
             label = row.iloc[self.label_column_idx]
             if label in self.augmented_classes:
-                for _ in range(int(self.augmentation_ratio)):
+                for copy_number in range(1, int(self.augmentation_ratio) + 1):
                     augmented_comment = self.__augment_sentence(comment)
                     augmented_row = row.copy()
                     augmented_row.iloc[self.comment_column_idx] = augmented_comment
+                    augmented_row.iloc[self.id_column_idx] = f"{original_id}_Augmented_{copy_number}"
                     augmented_data.append(augmented_row)
         return pd.concat([self.data, pd.DataFrame(augmented_data, columns=self.data.columns)])
 
@@ -140,10 +156,12 @@ def get_dataloader(dataset, datashape='text', embedding_file_path=None, batch_si
     Returns:
         DataLoader: A PyTorch DataLoader object for the specified dataset.
     '''
+    print(f'[Dataloader Status]: Loading the dataset...')
     if datashape == 'text':
         if embedding_file_path:
             print(f'[Warning]: A vectorization file path was inserted despite datashape=text. Returning textual dataloader.')
         # For text-based loading, directly return a DataLoader using the raw dataset
+        print(f'[Dataloader Status]: Done.')
         return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
 
     elif datashape == 'embedding':

@@ -12,7 +12,7 @@ SUBSET_COLUMN_IDX = 8   #   The column where the subset mark (A, B) is.
 
 # Augmentation
 AUGMENTED_CLASSES = ['Pro-Israel', 'Pro-Palestine'] # Classes to augment.
-AUGMENTATION_RATIO = 5    # Increase in the comments number, int.
+AUGMENTATION_RATIO = 2    # Increase in the comments number, int.
 ADVERSATION_RATIO = 0.1 # Replacement ratio within the comment.
 
 # Dataloader

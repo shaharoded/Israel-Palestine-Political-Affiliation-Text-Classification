@@ -3,11 +3,111 @@ from tqdm import tqdm
 import random
 import re
 import contractions
-from nltk.corpus import wordnet
+import nltk
+from nltk.corpus import wordnet, stopwords
 from torch.utils.data import Dataset, DataLoader
+from transformers import pipeline
+
+STOPWORDS = set(stopwords.words('english'))
 
 # Local Code
 from Config.dataset_config import *
+
+
+class TextAugmenter:
+    def __init__(self, adversation_ratio=0.1, methods=None):
+        self.adversation_ratio = adversation_ratio
+        self.methods = methods or ['wordnet']
+        self.unmasker = pipeline('fill-mask', model='bert-base-uncased')  # For context-aware synonyms
+    
+    def random_deletion(self, sentence):
+        '''
+        Randomally delete words from the sentence
+        '''
+        words = nltk.word_tokenize(sentence)
+        return " ".join([word for word in words if random.random() > self.adversation_ratio])
+    
+    def random_swap(self, sentence):
+        '''
+        Randomally swap 2 words of the sentence
+        '''
+        words = nltk.word_tokenize(sentence)
+        for _ in range(int(len(words) * self.adversation_ratio)):
+            idx1, idx2 = random.sample(range(len(words)), 2)
+            words[idx1], words[idx2] = words[idx2], words[idx1]
+        return " ".join(words)
+    
+    def get_wordnet_synonyms(self, word, pos=None):
+        '''
+        Randomally replace a word with a synonim
+        '''
+        synonyms = set()
+        for syn in wordnet.synsets(word, pos=pos):
+            for lemma in syn.lemmas():
+                synonyms.add(lemma.name().replace('_', ' '))
+        synonyms.discard(word)
+        return list(synonyms)
+    
+    def get_wordnet_pos(self, treebank_tag):
+        '''
+        Use POS to choose the word to replace
+        '''
+        if treebank_tag.startswith('J'):
+            return wordnet.ADJ
+        elif treebank_tag.startswith('V'):
+            return wordnet.VERB
+        elif treebank_tag.startswith('N'):
+            return wordnet.NOUN
+        elif treebank_tag.startswith('R'):
+            return wordnet.ADV
+        else:
+            return None
+    
+    def synonym_replacement(self, sentence):
+        '''
+        Randomally replace a word with a synonim
+        '''
+        words = nltk.word_tokenize(sentence)
+        pos_tags = nltk.pos_tag(words)
+        augmented_words = []
+        for word, pos in pos_tags:
+            if word.lower() in STOPWORDS:
+                augmented_words.append(word)
+                continue
+            wordnet_pos = self.get_wordnet_pos(pos)
+            if wordnet_pos and random.random() < self.adversation_ratio:
+                synonyms = self.get_wordnet_synonyms(word, pos=wordnet_pos)
+                if synonyms:
+                    augmented_words.append(random.choice(synonyms))
+                else:
+                    augmented_words.append(word)
+            else:
+                augmented_words.append(word)
+        return " ".join(augmented_words)
+    
+    def contextual_synonym_replacement(self, sentence):
+        words = nltk.word_tokenize(sentence)
+        for i, word in enumerate(words):
+            if random.random() < self.adversation_ratio:
+                masked_sentence = sentence.replace(word, '[MASK]', 1)
+                suggestions = self.unmasker(masked_sentence)
+                if suggestions:
+                    replacement = suggestions[0]['token_str']
+                    words[i] = replacement
+        return " ".join(words)
+
+    def augment_comment(self, comment):
+        method = random.choice(self.methods)
+        if method == 'deletion':
+            return self.random_deletion(comment)
+        elif method == 'swap':
+            return self.random_swap(comment)
+        elif method == 'wordnet':
+            return self.synonym_replacement(comment)
+        elif method == 'contextual':
+            return self.contextual_synonym_replacement(comment)
+        else:
+            return comment  # Fallback
 
 
 class TextDataset(Dataset):
@@ -16,7 +116,7 @@ class TextDataset(Dataset):
     Will load the text comments and allow a dataloader that will get them as vectors or embeddings.
     '''
     def __init__(self, data_path, subset, id_column_idx, comment_column_idx, label_column_idx, subset_column_idx,
-                 augmented_classes=None, augmentation_ratio=1.0, adversation_ratio=0.1):
+                 augmented_classes=None, augmentation_ratio=3.0, augmentation_methods = ['wordnet'], adversation_ratio=0.1):
         self.data_path = data_path
         self.subset = subset
         self.id_column_idx = id_column_idx
@@ -24,12 +124,17 @@ class TextDataset(Dataset):
         self.label_column_idx = label_column_idx
         self.subset_column_idx = subset_column_idx
         self.augmented_classes = augmented_classes or []
-        self.augmentation_ratio = augmentation_ratio
-        self.adversation_ratio = adversation_ratio
+        self.augmentation_ratio = augmentation_ratio        
 
-        # Load and preprocess data
+        # Load data
         self.data = self.__load_and_filter_data()
+        
+        # Process data (text, remove nan, remove short comments)
         self.data = self.__preprocess_data()
+        
+        # Augment data
+        self.augmenter = TextAugmenter(adversation_ratio=adversation_ratio, 
+                                       methods=augmentation_methods)
         self.data = self.__augment_data()
 
     def __load_and_filter_data(self):
@@ -46,10 +151,15 @@ class TextDataset(Dataset):
     def __preprocess_data(self):
         """
         Apply text preprocessing to the comment column with a progress bar.
+        In addition, drop irrelevant comments and nans.
         """
         # Wrap the progress bar around the column iteration
         tqdm.pandas(desc="Preprocessing comments")
         self.data.iloc[:, self.comment_column_idx] = self.data.iloc[:, self.comment_column_idx].progress_apply(self.preprocess_text)
+        self.data = self.data.dropna(subset=[self.data.columns[self.comment_column_idx]])
+        self.data = self.data[
+        self.data[self.data.columns[self.comment_column_idx]].apply(lambda x: len(x.split()) >= 2)
+        ]
         return self.data
 
     @staticmethod
@@ -78,29 +188,6 @@ class TextDataset(Dataset):
         text = re.sub(r'[^\w\s.,!?\'"\{\(\[\-\\/:;]', '', text)  # Remove irrelevant characters
         return text
 
-    def __augment_sentence(self, sentence):
-        words = sentence.split()
-        augmented_words = []
-        for word in words:
-            if random.random() < self.adversation_ratio:
-                synonyms = self.__get_synonyms(word)
-                if synonyms:
-                    augmented_words.append(random.choice(synonyms))
-                else:
-                    augmented_words.append(word)
-            else:
-                augmented_words.append(word)
-        return " ".join(augmented_words)
-
-    def __get_synonyms(self, word):
-        synonyms = set()
-        for syn in wordnet.synsets(word):
-            for lemma in syn.lemmas():
-                synonyms.add(lemma.name().replace('_', ' '))
-        # Remove the original word from synonyms
-        synonyms.discard(word)
-        return list(synonyms)
-
     def __augment_data(self):
         """
         Augment the data with a progress bar to track augmentation progress.
@@ -112,7 +199,7 @@ class TextDataset(Dataset):
             label = row.iloc[self.label_column_idx]
             if label in self.augmented_classes:
                 for copy_number in range(1, int(self.augmentation_ratio) + 1):
-                    augmented_comment = self.__augment_sentence(comment)
+                    augmented_comment = self.augmenter.augment_comment(comment)
                     augmented_row = row.copy()
                     augmented_row.iloc[self.comment_column_idx] = augmented_comment
                     augmented_row.iloc[self.id_column_idx] = f"{original_id}_Augmented_{copy_number}"
@@ -124,9 +211,6 @@ class TextDataset(Dataset):
         Save the dataset to a CSV file for inspection.
         """
         self.data.to_csv(output_path, index=False)
-    
-    def get_dataloader():
-        pass
 
     def __len__(self):
         return len(self.data)
@@ -191,7 +275,8 @@ if __name__ == "__main__":
         subset_column_idx=SUBSET_COLUMN_IDX,
         augmented_classes=AUGMENTED_CLASSES,
         augmentation_ratio=AUGMENTATION_RATIO,
-        adversation_ratio=ADVERSATION_RATIO
+        augmentation_methods=AUGMENTATION_METHODS,
+        adversation_ratio = ADVERSATION_RATIO
     )
 
     # Save dataset to CSV for inspection

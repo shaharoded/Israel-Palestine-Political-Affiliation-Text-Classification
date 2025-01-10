@@ -2,7 +2,7 @@
 DATA_PATH = 'Data/full_research_data_tagged.csv'
 EMBEDDING_PATH = 'Embedding/BERT_Weights...'
 TFIDF_PATH = 'Embedding/TFIDF_File.pkl'
-SUBSET = 'B'    # Choose between A or B, one for embedding finetune and the other for classification.
+SUBSET = 'B'    # Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
 
 # Relevant Columns
 ID_COLUMN_IDX = 0
@@ -13,6 +13,7 @@ SUBSET_COLUMN_IDX = 8   #   The column where the subset mark (A, B) is.
 # Augmentation
 AUGMENTED_CLASSES = ['Pro-Israel', 'Pro-Palestine'] # Classes to augment.
 AUGMENTATION_RATIO = 2    # Increase in the comments number, int.
+AUGMENTATION_METHODS = ['deletion', 'swap', 'wordnet', 'contextual']
 ADVERSATION_RATIO = 0.1 # Replacement ratio within the comment.
 
 # Dataloader

@@ -1,5 +1,4 @@
 openai
-transformers
 scikit-learn
 pandas
 contractions

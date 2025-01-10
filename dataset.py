@@ -6,7 +6,6 @@ import contractions
 import nltk
 from nltk.corpus import wordnet, stopwords
 from torch.utils.data import Dataset, DataLoader
-from transformers import pipeline
 
 STOPWORDS = set(stopwords.words('english'))
 
@@ -18,7 +17,6 @@ class TextAugmenter:
     def __init__(self, adversation_ratio=0.1, methods=None):
         self.adversation_ratio = adversation_ratio
         self.methods = methods or ['wordnet']
-        self.unmasker = pipeline('fill-mask', model='bert-base-uncased')  # For context-aware synonyms
     
     def random_deletion(self, sentence):
         '''
@@ -84,17 +82,6 @@ class TextAugmenter:
             else:
                 augmented_words.append(word)
         return " ".join(augmented_words)
-    
-    def contextual_synonym_replacement(self, sentence):
-        words = nltk.word_tokenize(sentence)
-        for i, word in enumerate(words):
-            if random.random() < self.adversation_ratio:
-                masked_sentence = sentence.replace(word, '[MASK]', 1)
-                suggestions = self.unmasker(masked_sentence)
-                if suggestions:
-                    replacement = suggestions[0]['token_str']
-                    words[i] = replacement
-        return " ".join(words)
 
     def augment_comment(self, comment):
         method = random.choice(self.methods)
@@ -104,8 +91,6 @@ class TextAugmenter:
             return self.random_swap(comment)
         elif method == 'wordnet':
             return self.synonym_replacement(comment)
-        elif method == 'contextual':
-            return self.contextual_synonym_replacement(comment)
         else:
             return comment  # Fallback
 

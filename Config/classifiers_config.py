@@ -16,9 +16,9 @@ MODEL_CONFIG = {
     },
     "dnn": {
         "num_epochs": 10,  # Adjust after trial and error
-        "learning_rate": 0.001,
+        "learning_rate": 1e-3,
         "batch_norm": True,
-        "drop_out": 0.1,
-        "layers": [768, 50, 3]  # Layer dimentions, including an input and an output layer.
+        "drop_out": 0.5,
+        "layers": [768, 128, 64, 3]  # Layer dimentions, including an input and an output layer.
     }
 }

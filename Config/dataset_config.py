@@ -1,7 +1,7 @@
 # Data & Embeddings
 DATA_PATH = 'Data/full_research_data_tagged.csv'
-EMBEDDING_PATH = 'Embedding/BERT_Weights...'
-TFIDF_PATH = 'Embedding/TFIDF_File.pkl'
+EMBEDDING_PATH = 'Embedding/distilbert-finetuned'   # A folder with the weights and tokenizer
+TFIDF_PATH = 'Embedding/tfidf/tfidf_vectorizer.pkl'
 SUBSET = 'B'    # Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
 
 # Relevant Columns
@@ -16,6 +16,9 @@ AUGMENTATION_RATIO = 3    # Increase in the comments number, int. Meaning -> 1 c
 AUGMENTATION_METHODS = ['deletion', 'swap', 'wordnet']    # Add from 'deletion', 'swap', 'wordnet'
 ADVERSATION_RATIO = 0.1 # Replacement ratio within the comment.
 
+# Embedding
+EMBEDDING_METHOD = "distilbert"     # "distilbert" or "tf-idf"
+
 # Dataloader
 BATCH_SIZE = 32
-DATALOADER_SHAPE = 'text'   # Choose from text or embedding
+DATALOADER_SHAPE = 'embedding'   # Choose from 'text' or 'embedding'

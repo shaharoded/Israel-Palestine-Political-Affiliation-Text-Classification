@@ -11,6 +11,7 @@ STOPWORDS = set(stopwords.words('english'))
 
 # Local Code
 from Config.dataset_config import *
+from embedder import *
 
 
 class TextAugmenter:
@@ -206,45 +207,64 @@ class TextDataset(Dataset):
         comment = row.iloc[self.comment_column_idx]
         label = row.iloc[self.label_column_idx]
         return comment_id, comment, label
+   
+
+
+class EmbeddingDataset(Dataset):
+    '''
+    Dataset class to handle embedding generation on the fly.
+    Takes a TextDataset and generates embeddings when accessed.
+    '''
+    def __init__(self, text_dataset, embedder, embedding_method="distilbert"):
+        self.text_dataset = text_dataset  # The original TextDataset
+        self.embedder = embedder  # Embedder instance (for embedding generation)
+        self.embedding_method = embedding_method  # Embedding method (DistilBERT or TF-IDF)
+
+    def __len__(self):
+        return len(self.text_dataset)  # Length is based on the original TextDataset
+
+    def __getitem__(self, idx):
+        comment_id, comment, label = self.text_dataset[idx]  # Get raw text from original dataset
+
+        # Generate embedding for the comment using the chosen method (DistilBERT or TF-IDF)
+        embedding = self.embedder.embed(comment, method=self.embedding_method)
+        
+        return embedding, label  # Return embedding with the labe
+        
     
-def get_dataloader(dataset, datashape='text', embedding_file_path=None, batch_size=32, shuffle=True, num_workers=2):
+def get_dataloader(dataset, embedder=None, datashape='text', embedding_method="distilbert", batch_size=32, shuffle=True, num_workers=2):
     '''
     Will create the DataLoader object as needed for next steps.
-
     Args:
-        dataset (TextDataset): Gets the original dataset object.
-        datashape (str): Choose between 'text' or 'embedding'. 'text' is meant for
-                        loading into an embedding model for fine-tune, while embedding is meant for 
-                        loading to classifier models.
-        embedding_file_path (str): Path to the embedding weights or TF-IDF file which will
-                                    be loaded to the Embedding class for text process.
+        dataset (TextDataset): The original dataset object.
+        embedder (Embedder): The embedder class that generates embeddings (DistilBERT or TF-IDF).
+        datashape (str): Choose between 'text' or 'embedding'.
+        embedding_method (str): Choose between 'distilbert' or 'tf-idf'.
         batch_size (int): Number of samples per batch.
         shuffle (bool): Whether to shuffle the dataset.
         num_workers (int): Number of subprocesses for data loading.
-
     Returns:
         DataLoader: A PyTorch DataLoader object for the specified dataset.
     '''
     print(f'[Dataloader Status]: Loading the dataset...')
+    
     if datashape == 'text':
-        if embedding_file_path:
-            print(f'[Warning]: A vectorization file path was inserted despite datashape=text. Returning textual dataloader.')
+        if embedding_method:
+            print(f'[Warning]: You provided an embedding method despite datashape=text. Returning textual dataloader.')
         # For text-based loading, directly return a DataLoader using the raw dataset
         print(f'[Dataloader Status]: Done.')
         return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
 
     elif datashape == 'embedding':
-        # Placeholder for embedding logic
-        # If embedding_file_path is None, raise an error
-        if embedding_file_path is None:
-            raise ValueError("embedding_file_path must be provided when datashape='embedding'.")
+        # Ensure you have an embedder instance
+        if not embedder:
+            raise ValueError("Embedder instance must be provided when datashape='embedding'.")
         
-        # Load embeddings from the file and preprocess them (to be implemented later)
-        # embeddings = load_embeddings(embedding_file_path)
-        # vectorized_dataset = create_vectorized_dataset(dataset, embeddings)
-        # return DataLoader(vectorized_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-
-        raise NotImplementedError("Embedding-based DataLoader is not implemented yet.")
+        # Wrap the original TextDataset with the EmbeddingDataset class
+        embedding_dataset = EmbeddingDataset(text_dataset=dataset, embedder=embedder, embedding_method=embedding_method)
+        
+        print(f'[Dataloader Status]: Done.')
+        return DataLoader(embedding_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     else:
         raise ValueError(f"Unsupported datashape: {datashape}. Choose 'text' or 'embedding'.")
 
@@ -268,10 +288,14 @@ if __name__ == "__main__":
     dataset.save_to_csv('augmented_dataset_tmp.csv')
     
     # Create Dataloader
+    embedder = Embedder()
+    
+    # Get the DataLoader with embeddings
     dataloader = get_dataloader(dataset, 
+                                embedder=embedder, 
                                 datashape=DATALOADER_SHAPE, 
-                                embedding_file_path=EMBEDDING_PATH, 
-                                batch_size=BATCH_SIZE, 
+                                embedding_method=EMBEDDING_METHOD, 
+                                batch_size=BATCH_SIZE,
                                 shuffle=True, 
                                 num_workers=2)
     

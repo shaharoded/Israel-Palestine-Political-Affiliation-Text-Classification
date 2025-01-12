@@ -5,5 +5,7 @@ augmented_dataset_tmp.csv
 
 # Ignore an entire folder
 Data/
+Embedding/
+Analysis/
 venv/
 __pycache__/

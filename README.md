@@ -6,7 +6,7 @@ This project focuses on creating a machine learning (ML) and deep learning (DL) 
 
 ## Features
 - **Automated Tagger**: A module to generate labeled datasets from untagged social media comments (`llm_tagger`) using a Large Language Model (LLM) by OpenAI.
-- **Dataset Class**: Responsible for text preprocessing for both classification process, augmentation, adversation and for handeling the dataloading for textual data (for finetuning of embedder) and for classifier training.
+- **Dataset Class**: Responsible for text preprocessing for both classification process, augmentation, adversation and for handeling the dataloading for textual data (for finetuning of embedder) and for classifier training (creating an embedded dataset).
 - **Customizable Configurations**: Easily adjustable parameters for LLM settings, , dataset settings, best model's configurations, and testing modes. Each major component has it's own configurations file under `Config` folder.
 
 ## Usage
@@ -29,7 +29,14 @@ The `llm_tagger.py` module provides functionality to generate labels for an unta
 
 ### Running the Dataset
 The `dataset.py` module is pretty straight forward and can be run through `main.py`. Adjust the path and choose the subset you wish to work with (pre-divided), set up the file paths for the research data and vectorization weights, set augmentation ratio, traget groups and the data shape of the dataloader, meaning - this module will create a textual dataloader on defualt, assuming you have yet trained a model, but on demand will create a vectorized dataset (with embeddings for comments), under the assumption you have already fine-tuned a model, and have it's weights available.
-This module uses the `vectorize.py` (not yet developed) module for that.
+This module uses the `embedder.py` module for that, and will create a dataloder fit for the classification task. Before calling a classification task be sure to set in `dataset_config.py` the parameter `DATALOADER_SHAPE = 'embedding'`, and pay attention that the `EMBEDDING_METHOD` matches your intention.
+The trained weights for both models can be loaded from [this link](https://drive.google.com/drive/folders/1gNbb4B03qY2LVFy61dkgW_Ryf18YuRSm?usp=sharing). Both TFIDF model and DistilBERT pretrain folders are there. Place under local 'Embedding' folder to match with the paths in `dataset_config.py`
+
+### Training a Classifier
+The `classifiers.py` module controls the training pipeline. It assumes you are already capable of creating a vectorized dataloader and will use it, and the tested configurations for the best ML model to train a classifier for the task. The best configurations were tested seperatly using 'Optuna' (analysis available at Analysis folder). This module allows you to choose between different model configurations.
+
+TO-DO: EXPLAIN ACTIVATION AND EVALUATION...
+
 
 ### Installation
 Set up the environment and install dependencies:

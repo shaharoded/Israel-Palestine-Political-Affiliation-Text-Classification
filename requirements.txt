@@ -1,5 +1,5 @@
 openai
-scikit-learn
+scikit-learn==1.6.0
 pandas
 contractions
 torch

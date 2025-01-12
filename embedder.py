@@ -1,5 +1,9 @@
 from transformers import DistilBertTokenizer, DistilBertModel
 import joblib
+import warnings
+from sklearn.exceptions import InconsistentVersionWarning
+
+warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 # Local Code
 from Config.dataset_config import *
@@ -77,5 +81,5 @@ if __name__ == "__main__":
     embedder = Embedder()
     print("Embedding using DistilBERT:")
     print(embedder.embed("israel palestine conflict", method="distilbert"))
-    print("\nEmbedding using TF-IDF:")
+    print("Embedding using TF-IDF:")
     print(embedder.embed("israel palestine conflict", method="tf-idf"))

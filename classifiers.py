@@ -33,7 +33,9 @@ class DNN(nn.Module):
         super(DNN, self).__init__()
         layers = []
         input_size = config["layers"][0]
-        for output_size in config["layers"][1:]:
+
+        # Iterate through the hidden layers
+        for output_size in config["layers"][1:-1]:  # Skip the last layer (number of classes)
             layers.append(nn.Linear(input_size, output_size))
             if config.get("batch_norm", False):
                 layers.append(nn.BatchNorm1d(output_size))
@@ -41,8 +43,12 @@ class DNN(nn.Module):
             if config.get("drop_out", 0.0) > 0:
                 layers.append(nn.Dropout(config["drop_out"]))
             input_size = output_size
-        layers.append(nn.Linear(input_size, 1))  # Final layer for binary classification
-        layers.append(nn.Sigmoid())  # Sigmoid activation for binary output
+
+        # Final classification layer
+        num_classes = config["layers"][-1]
+        layers.append(nn.Linear(input_size, num_classes))  # Last layer matches num_classes
+        layers.append(nn.Softmax(dim=1))  # Softmax activation for multi-class output
+
         self.model = nn.Sequential(*layers)
         self.learning_rate = config["learning_rate"]
 
@@ -69,7 +75,8 @@ class Classifier:
         elif model_type == "dnn":
             self.model = DNN(config)
             self.optimizer = optim.Adam(self.model.parameters(), lr=config["learning_rate"])
-            self.criterion = nn.BCELoss()  # Binary Cross-Entropy Loss
+            self.criterion = nn.CrossEntropyLoss()  # Cross-Entropy Loss for multiclass problem
+            self.num_epochs = config["num_epochs"]
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
 
@@ -92,7 +99,7 @@ class Classifier:
             self.model.fit(X, y)
         elif self.model_type == "dnn":
             self.model.train()
-            for epoch in range(10):  # Number of epochs (can be a parameter in config)
+            for epoch in range(self.num_epochs):
                 for _, (features, labels) in enumerate(train_loader):
                     self.optimizer.zero_grad()
                     outputs = self.model(features.float())
@@ -124,8 +131,9 @@ class Classifier:
             self.model.eval()
             with torch.no_grad():
                 for _, (features, _) in enumerate(test_loader):
-                    outputs = self.model(features.float())
-                    predictions.extend((outputs.squeeze() > 0.5).int().tolist())
+                    outputs = self.model(features.float())  # outputs.shape should be (batch_size, 3)
+                    _, predictions_batch = torch.max(outputs, 1)  # Get the index of the max probability for each sample
+                    predictions.extend(predictions_batch.int().tolist())  # Append predictions
         return predictions
     
     

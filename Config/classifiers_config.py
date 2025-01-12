@@ -15,9 +15,10 @@ MODEL_CONFIG = {
         "learning_rate": 0.1
     },
     "dnn": {
+        "num_epochs": 10,  # Adjust after trial and error
         "learning_rate": 0.001,
         "batch_norm": True,
-        "drop_out": 0.5,
-        "layers": [100, 50, 25]
+        "drop_out": 0.1,
+        "layers": [768, 50, 3]  # Layer dimentions, including an input and an output layer.
     }
 }

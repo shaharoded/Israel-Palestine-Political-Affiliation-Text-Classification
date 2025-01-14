@@ -1,7 +1,8 @@
 openai
-scikit-learn==1.6.0
+scikit-learn
 pandas
 contractions
 torch
 nltk
 xgboost
+optuna

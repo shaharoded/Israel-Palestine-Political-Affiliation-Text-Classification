@@ -6,3 +6,4 @@ torch
 nltk
 xgboost
 optuna
+transformers

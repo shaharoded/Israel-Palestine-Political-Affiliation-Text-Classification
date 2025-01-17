@@ -91,7 +91,7 @@ class Classifier:
         if self.model_type in ["logistic_regression", "svm", "xgboost"]:
             X, y = [], []
             for batch in train_loader:
-                comment_ids, features, labels = batch
+                features, labels = batch
                 X.append(features)
                 y.append(labels)
             X = torch.cat(X).numpy()

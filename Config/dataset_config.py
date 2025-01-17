@@ -1,7 +1,9 @@
+import os
+
 # Data & Embeddings
-DATA_PATH = 'Data/full_research_data_tagged.csv'
-EMBEDDING_PATH = 'Embedding/distilbert-finetuned'   # A folder with the weights and tokenizer
-TFIDF_PATH = 'Embedding/tfidf/tfidf_vectorizer.pkl'
+DATA_PATH = os.path.abspath('../Data/full_research_data_tagged.csv')
+EMBEDDING_PATH = os.path.abspath("../Embedding/distilbert-finetuned")   # A folder with the weights and tokenizer
+TFIDF_PATH = os.path.abspath('../Embedding/tfidf/tfidf_vectorizer.pkl')
 SUBSET = 'B'    # Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
 
 # Relevant Columns

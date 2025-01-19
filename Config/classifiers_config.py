@@ -3,8 +3,12 @@
 MODEL_TYPE = 'dnn'  # Choose from [dnn, logistic_regression, svm, xgboost]
 MODEL_CONFIG = {
     "logistic_regression": {
-        "solver": "liblinear",
-        "max_iter": 100
+        "num_epochs": 10,  # Adjust after trial and error
+        "learning_rate": 1e-3,
+        "weight_decay": 1e-4,
+        "batch_norm": False,    # Do not modify in optimization
+        "drop_out": 0.0,    # Do not modify in optimization
+        "layers": [768, 3]  # Do not modify in optimization
     },
     "svm": {
         "kernel": "linear",
@@ -17,6 +21,7 @@ MODEL_CONFIG = {
     "dnn": {
         "num_epochs": 10,  # Adjust after trial and error
         "learning_rate": 1e-3,
+        "weight_decay": 1e-5,
         "batch_norm": True,
         "drop_out": 0.5,
         "layers": [768, 128, 64, 3]  # Layer dimentions, including an input and an output layer.

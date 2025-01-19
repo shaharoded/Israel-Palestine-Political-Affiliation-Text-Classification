@@ -1,9 +1,12 @@
 import os
 
 # Data & Embeddings
-DATA_PATH = os.path.abspath('../Data/full_research_data_tagged.csv')
-EMBEDDING_PATH = os.path.abspath("../Embedding/distilbert-finetuned")   # A folder with the weights and tokenizer
-TFIDF_PATH = os.path.abspath('../Embedding/tfidf/tfidf_vectorizer.pkl')
+# Base directories
+DATA_DIR_PATH = 'Data'
+EMBEDDING_DIR_PATH = 'Embedding'
+DATA_PATH = os.path.join(DATA_DIR_PATH, 'full_research_data_tagged.csv')  # Full path to the data file
+EMBEDDING_PATH = os.path.join(EMBEDDING_DIR_PATH, "distilbert-finetuned")  # Full path to the embedding directory
+TFIDF_PATH = os.path.join(EMBEDDING_DIR_PATH, 'tfidf/tfidf_vectorizer.pkl')  # Full path to the TF-IDF vectorizer
 SUBSET = 'B'    # Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
 
 # Relevant Columns
@@ -24,3 +27,8 @@ EMBEDDING_METHOD = "distilbert"     # "distilbert" or "tf-idf"
 # Dataloader
 BATCH_SIZE = 32
 DATALOADER_SHAPE = 'embedding'   # Choose from 'text' or 'embedding'
+LABELS_ENCODER = {
+    "Pro-Palestine": 0,
+    "Pro-Israel": 1,
+    "Undefined": 2
+}

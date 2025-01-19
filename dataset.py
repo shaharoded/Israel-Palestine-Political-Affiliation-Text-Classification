@@ -1,3 +1,5 @@
+import numpy as np
+import pickle
 import pandas as pd
 from tqdm import tqdm
 import random
@@ -5,7 +7,9 @@ import re
 import contractions
 import nltk
 from nltk.corpus import wordnet, stopwords
+import torch
 from torch.utils.data import Dataset, DataLoader
+import xgboost as xgb
 
 STOPWORDS = set(stopwords.words('english'))
 
@@ -119,9 +123,12 @@ class TextDataset(Dataset):
         self.data = self.__preprocess_data()
         
         # Augment data
-        self.augmenter = TextAugmenter(adversation_ratio=adversation_ratio, 
-                                       methods=augmentation_methods)
-        self.data = self.__augment_data()
+        if self.augmented_classes and self.augmentation_ratio > 0 and adversation_ratio > 0:
+            self.augmenter = TextAugmenter(adversation_ratio=adversation_ratio, 
+                                        methods=augmentation_methods)
+            self.data = self.__augment_data()
+        else:
+            print(f'[Dataset Status]: No Augmentation was chosen (augmentation/ adversation ratio == 0 or no augmented_classes). Moving on...')
 
     def __load_and_filter_data(self):
         print(f'[Dataset Status]: Loading the dataset...')
@@ -206,35 +213,93 @@ class TextDataset(Dataset):
         comment_id = row.iloc[self.id_column_idx]
         comment = row.iloc[self.comment_column_idx]
         label = row.iloc[self.label_column_idx]
-        return comment_id, comment, label
+        encoded_label = LABELS_ENCODER.get(label)
+        return comment_id, comment, encoded_label
    
 
 
 class EmbeddingDataset(Dataset):
     '''
-    Dataset class to handle embedding generation on the fly.
-    Takes a TextDataset and generates embeddings when accessed.
+    Dataset class to handle embedding generation.
+    The embeddings are precomputed on init to support non NN models that cannot handle
+    a dataloader, so beware of memory usage.
+    If a strict NN based model is selected, there is no need for the pre-computation.
+    Takes a TextDataset object.
     '''
-    def __init__(self, text_dataset, embedder, embedding_method="distilbert"):
-        self.text_dataset = text_dataset  # The original TextDataset
-        self.embedder = embedder  # Embedder instance (for embedding generation)
-        self.embedding_method = embedding_method  # Embedding method (DistilBERT or TF-IDF)
+    def __init__(self, text_dataset, embedder, embedding_method):
+        """
+        Args:
+            text_dataset (TextDataset): The original text dataset object.
+            embedder (Embedder): Embedder instance for generating embeddings.
+            embedding_method (str): Method for embedding generation (e.g., 'distilbert', 'tf-idf').
+        """
+        self.text_dataset = text_dataset
+        self.embedder = embedder
+        self.embedding_method = embedding_method
+        self.subset = text_dataset.subset
+        self.data_dir = os.path.dirname(text_dataset.data_path)
+        # Ensure the data directory exists
+        os.makedirs(self.data_dir, exist_ok=True)
+
+        # File path for the precomputed embeddings
+        self.cache_file = os.path.join(self.data_dir, f"subset {self.subset}_augmentation={text_dataset.augmentation_ratio}_embeddings_{self.embedding_method}.pkl")
+
+        # Load or generate embeddings
+        if os.path.exists(self.cache_file):
+            print(f"[EmbeddingDataset]: Loading precomputed embeddings from {self.cache_file}...")
+            with open(self.cache_file, "rb") as f:
+                data = pickle.load(f)
+            self.embeddings = data["embeddings"]
+            self.labels = data["labels"]
+        else:
+            print(f"[EmbeddingDataset]: Precomputing embeddings and saving to {self.cache_file}...")
+            self.embeddings, self.labels = self.__precompute_embeddings()
+            print("[EmbeddingDataset Status]: Embedding generation complete.")
+
+    def __precompute_embeddings(self):
+        """
+        Generate embeddings and save them to a pickle file for future use.
+        """
+        embeddings = []
+        labels = []
+
+        for _, (comment_id, comment, label) in tqdm(
+            enumerate(self.text_dataset),
+            total=len(self.text_dataset),
+            desc=f"Generating embeddings for {self.subset} dataset"
+        ):
+            embedding = self.embedder.embed(comment, method=self.embedding_method)
+            # Convert embedding to a PyTorch tensor if it's a numpy array or other type
+            if isinstance(embedding, np.ndarray):
+                embedding = torch.tensor(embedding, dtype=torch.float32)
+            embeddings.append(embedding)
+            labels.append(label)
+
+        embeddings = torch.stack(embeddings)  # Stack embeddings into a single tensor
+        labels = torch.tensor(labels, dtype=torch.long)
+
+        # Save to pickle
+        with open(self.cache_file, "wb") as f:
+            pickle.dump({"embeddings": embeddings, "labels": labels}, f)
+
+        return embeddings, labels
 
     def __len__(self):
         return len(self.text_dataset)  # Length is based on the original TextDataset
 
     def __getitem__(self, idx):
-        comment_id, comment, label = self.text_dataset[idx]  # Get raw text from original dataset
-
-        # Generate embedding for the comment using the chosen method (DistilBERT or TF-IDF)
-        embedding = self.embedder.embed(comment, method=self.embedding_method)
-        
-        return embedding, label  # Return embedding with the labe
+        """
+        Return the precomputed embedding and label for the given index.
+        """
+        return self.embeddings[idx], self.labels[idx]
         
     
 def get_dataloader(dataset, embedder=None, datashape='text', embedding_method="distilbert", batch_size=32, shuffle=True, num_workers=2):
     '''
-    Will create the DataLoader object as needed for next steps.
+    Will create the DataLoader object.
+    Assumption is that is embedder object is passed, this is to be used for feeding in a model.
+    For that purpose, if embedder, this function will return a Dataloader, DMatrix (for xgboost) 
+    and a (X, y) tuple for other scikit models.
     Args:
         dataset (TextDataset): The original dataset object.
         embedder (Embedder): The embedder class that generates embeddings (DistilBERT or TF-IDF).
@@ -244,7 +309,11 @@ def get_dataloader(dataset, embedder=None, datashape='text', embedding_method="d
         shuffle (bool): Whether to shuffle the dataset.
         num_workers (int): Number of subprocesses for data loading.
     Returns:
-        DataLoader: A PyTorch DataLoader object for the specified dataset.
+        if datashape == 'text':
+            DataLoader: A PyTorch DataLoader object for text output.
+        elif datashape == 'embedding':
+            1. DataLoader: A PyTorch DataLoader object for embedding output.
+            2. tuple: An (X, y) tuple for other scikit models.
     '''
     print(f'[Dataloader Status]: Loading the dataset...')
     
@@ -263,8 +332,15 @@ def get_dataloader(dataset, embedder=None, datashape='text', embedding_method="d
         # Wrap the original TextDataset with the EmbeddingDataset class
         embedding_dataset = EmbeddingDataset(text_dataset=dataset, embedder=embedder, embedding_method=embedding_method)
         
+        # Prep the output
+        dataloader = DataLoader(embedding_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        
+        # Use precomputed embeddings and labels directly from the EmbeddingDataset
+        X = embedding_dataset.embeddings.numpy()  # Already precomputed in EmbeddingDataset
+        y = embedding_dataset.labels.numpy()      # Already precomputed in EmbeddingDataset
+
         print(f'[Dataloader Status]: Done.')
-        return DataLoader(embedding_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        return dataloader, (X, y)
     else:
         raise ValueError(f"Unsupported datashape: {datashape}. Choose 'text' or 'embedding'.")
 
@@ -291,6 +367,7 @@ if __name__ == "__main__":
     embedder = Embedder()
     
     # Get the DataLoader with embeddings
+    # Note the multiple objects outputted here
     dataloader = get_dataloader(dataset, 
                                 embedder=embedder, 
                                 datashape=DATALOADER_SHAPE, 

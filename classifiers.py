@@ -223,7 +223,7 @@ if __name__ == "__main__":
     classifier.fit(train_data_package)
 
     # Test the model
-    print(f'[Testing Status]: Testing on test dataloder...')
+    print(f'[Testing Status]: Testing on test subset...')
     predictions = classifier.predict(test_data_package)
 
     # Show accuracy score per class + macro (classification report)

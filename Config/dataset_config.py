@@ -1,9 +1,12 @@
 import os
 
 # Data & Embeddings
-# Base directories
-DATA_DIR_PATH = 'Data'
-EMBEDDING_DIR_PATH = 'Embedding'
+# Get the project root directory (move up one level from the 'Config' folder)
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Base directories (relative to project root)
+DATA_DIR_PATH = os.path.join(project_root, 'Data')
+EMBEDDING_DIR_PATH = os.path.join(project_root, 'Embedding')
 DATA_PATH = os.path.join(DATA_DIR_PATH, 'full_research_data_tagged.csv')  # Full path to the data file
 EMBEDDING_PATH = os.path.join(EMBEDDING_DIR_PATH, "distilbert-finetuned")  # Full path to the embedding directory
 TFIDF_PATH = os.path.join(EMBEDDING_DIR_PATH, 'tfidf/tfidf_vectorizer.pkl')  # Full path to the TF-IDF vectorizer
@@ -17,7 +20,7 @@ SUBSET_COLUMN_IDX = 8   #   The column where the subset mark (A, B) is.
 
 # Augmentation
 AUGMENTED_CLASSES = ['Pro-Israel', 'Pro-Palestine'] # Classes to augment.
-AUGMENTATION_RATIO = 3    # Increase in the comments number, int. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
+AUGMENTATION_RATIO = 5    # Increase in the comments number, int. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
 AUGMENTATION_METHODS = ['deletion', 'swap', 'wordnet']    # Add from 'deletion', 'swap', 'wordnet'
 ADVERSATION_RATIO = 0.1 # Replacement ratio within the comment.
 
@@ -25,7 +28,7 @@ ADVERSATION_RATIO = 0.1 # Replacement ratio within the comment.
 EMBEDDING_METHOD = "distilbert"     # "distilbert" or "tf-idf"
 
 # Dataloader
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 DATALOADER_SHAPE = 'embedding'   # Choose from 'text' or 'embedding'
 LABELS_ENCODER = {
     "Pro-Palestine": 0,

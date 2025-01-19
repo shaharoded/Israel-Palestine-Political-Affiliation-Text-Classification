@@ -1,9 +1,9 @@
 # Classifier __init__ configurations
 
-MODEL_TYPE = 'dnn'  # Choose from [dnn, logistic_regression, svm, xgboost]
+MODEL_TYPE = 'logistic_regression'  # Choose from [dnn, logistic_regression, svm, xgboost]
 MODEL_CONFIG = {
     "logistic_regression": {
-        "num_epochs": 10,  # Adjust after trial and error
+        "num_epochs": 20,  # Adjust after trial and error
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
         "batch_norm": False,    # Do not modify in optimization
@@ -19,9 +19,9 @@ MODEL_CONFIG = {
         "learning_rate": 0.1
     },
     "dnn": {
-        "num_epochs": 10,  # Adjust after trial and error
+        "num_epochs": 20,  # Adjust after trial and error
         "learning_rate": 1e-3,
-        "weight_decay": 1e-5,
+        "weight_decay": 1e-4,
         "batch_norm": True,
         "drop_out": 0.5,
         "layers": [768, 128, 64, 3]  # Layer dimentions, including an input and an output layer.

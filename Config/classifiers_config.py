@@ -3,7 +3,7 @@
 MODEL_TYPE = 'svm'  # Choose from [dnn, logistic_regression, svm, xgboost]
 MODEL_CONFIG = {
     "logistic_regression": {
-        "num_epochs": 20,  # Adjust after trial and error
+        "num_epochs": 1,  # Do not modify in optimization
         "learning_rate": 1e-3,
         "weight_decay": 1e-4,
         "batch_norm": False,    # Do not modify in optimization

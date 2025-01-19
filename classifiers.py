@@ -225,7 +225,7 @@ if __name__ == "__main__":
     # Test the model
     print(f'[Testing Status]: Testing on test subset...')
     predictions = classifier.predict(test_data_package)
-
+    
     # Show accuracy score per class + macro (classification report)
     # Calculate accuracy and show classification report
     accuracy, report = calculate_accuracy(predictions, test_data_package)

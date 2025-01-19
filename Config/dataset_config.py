@@ -20,9 +20,9 @@ SUBSET_COLUMN_IDX = 8   #   The column where the subset mark (A, B) is.
 
 # Augmentation
 AUGMENTED_CLASSES = ['Pro-Israel', 'Pro-Palestine'] # Classes to augment.
-AUGMENTATION_RATIO = 5    # Increase in the comments number, int. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
+AUGMENTATION_RATIO = 0    # Increase in the comments number, int. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
 AUGMENTATION_METHODS = ['deletion', 'swap', 'wordnet']    # Add from 'deletion', 'swap', 'wordnet'
-ADVERSATION_RATIO = 0.1 # Replacement ratio within the comment.
+ADVERSATION_RATIO = 0.2 # Replacement ratio within the comment.
 
 # Embedding
 EMBEDDING_METHOD = "distilbert"     # "distilbert" or "tf-idf"

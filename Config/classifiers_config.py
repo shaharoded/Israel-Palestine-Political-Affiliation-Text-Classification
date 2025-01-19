@@ -1,6 +1,6 @@
 # Classifier __init__ configurations
 
-MODEL_TYPE = 'logistic_regression'  # Choose from [dnn, logistic_regression, svm, xgboost]
+MODEL_TYPE = 'svm'  # Choose from [dnn, logistic_regression, svm, xgboost]
 MODEL_CONFIG = {
     "logistic_regression": {
         "num_epochs": 20,  # Adjust after trial and error

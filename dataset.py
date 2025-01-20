@@ -221,28 +221,54 @@ class TextDataset(Dataset):
 class EmbeddingDataset(Dataset):
     '''
     Dataset class to handle embedding generation.
+    For modularity, as this object is the needed object for classification task,
+    it is responsible for the creation of the TextDataset and its modification to Embedding
+    based one.
+    Caching of dataset memory is defined to avoid re-calculations of embeddings.
     The embeddings are precomputed on init to support non NN models that cannot handle
     a dataloader, so beware of memory usage.
-    If a strict NN based model is selected, there is no need for the pre-computation.
-    Takes a TextDataset object.
+    If a strict NN based model is selected as best model, there is no need for the pre-computation.
     '''
-    def __init__(self, text_dataset, embedder, embedding_method):
+    def __init__(self, data_path, subset, id_column_idx, comment_column_idx, label_column_idx, subset_column_idx,
+                 augmented_classes, augmentation_ratio, augmentation_methods, adversation_ratio, embedder, embedding_method):
         """
+        Creates the Dataset instance which fits the classification task.
+        Most recurrent parameters are used to initiate the TextDataset in the init.
         Args:
-            text_dataset (TextDataset): The original text dataset object.
+            data_path (str): The path to the .csv data file.
+            subset (str): Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
+            id_column_idx (int): Idx for the ID column in the dataframe.
+            comment_column_idx (int): Idx for the text column in the dataframe.
+            label_column_idx (int): Idx for the label column in the dataframe.
+            subset_column_idx (int): Idx for the subset column in the dataframe, indicating how to split it.
+            augmented_classes (list): A list of the classes to augment. Chose from ['Pro-Israel', 'Pro-Palestine', 'Undefined']
+            augmentation_ratio (int): Increase in the comments number. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
+            augmentation_methods (list): Choose from ['deletion', 'swap', 'wordnet'].
+            adversation_ratio (float): Replacement ratio within the comment.
             embedder (Embedder): Embedder instance for generating embeddings.
             embedding_method (str): Method for embedding generation (e.g., 'distilbert', 'tf-idf').
         """
-        self.text_dataset = text_dataset
+        self.text_dataset = TextDataset(
+                            data_path=data_path,
+                            subset=subset,
+                            id_column_idx=id_column_idx,
+                            comment_column_idx=comment_column_idx,
+                            label_column_idx=label_column_idx,
+                            subset_column_idx=subset_column_idx,
+                            augmented_classes=augmented_classes,
+                            augmentation_ratio=augmentation_ratio,
+                            augmentation_methods=augmentation_methods,
+                            adversation_ratio = adversation_ratio
+                            )
         self.embedder = embedder
         self.embedding_method = embedding_method
-        self.subset = text_dataset.subset
-        self.data_dir = os.path.dirname(text_dataset.data_path)
+        self.subset = subset
+        self.data_dir = os.path.dirname(data_path)
         # Ensure the data directory exists
         os.makedirs(self.data_dir, exist_ok=True)
 
         # File path for the precomputed embeddings
-        self.cache_file = os.path.join(self.data_dir, f"subset {self.subset}_augmentation={text_dataset.augmentation_ratio}_embeddings_{self.embedding_method}.pkl")
+        self.cache_file = os.path.join(self.data_dir, f"subset {subset}_augmentation={augmentation_ratio}_embeddings_{embedding_method}.pkl")
 
         # Load or generate embeddings
         if os.path.exists(self.cache_file):
@@ -294,57 +320,50 @@ class EmbeddingDataset(Dataset):
         return self.embeddings[idx], self.labels[idx]
         
     
-def get_dataloader(dataset, embedder=None, datashape='text', embedding_method="distilbert", batch_size=32, shuffle=True, num_workers=2):
+def get_dataloader(dataset, batch_size=32, shuffle=True, num_workers=2):
     '''
     Will create the DataLoader object.
-    Assumption is that is embedder object is passed, this is to be used for feeding in a model.
-    For that purpose, if embedder, this function will return a Dataloader, DMatrix (for xgboost) 
-    and a (X, y) tuple for other scikit models.
+    Assumption is that a Dataset object is passed. Function will response if the dataset is TextDataset or EmbeddingDataset.
+    If EmbeddingDataset, this function will return a Dataloader and a (X, y) tuple for other scikit models.
+    Else, if dataset is TextDataset it will return a text dataset for it, which is designed for analysis of Transformer model's feed.
     Args:
-        dataset (TextDataset): The original dataset object.
-        embedder (Embedder): The embedder class that generates embeddings (DistilBERT or TF-IDF).
-        datashape (str): Choose between 'text' or 'embedding'.
-        embedding_method (str): Choose between 'distilbert' or 'tf-idf'.
+        dataset (TextDataset or EmbeddingDataset): The original dataset object.
         batch_size (int): Number of samples per batch.
         shuffle (bool): Whether to shuffle the dataset.
         num_workers (int): Number of subprocesses for data loading.
     Returns:
-        if datashape == 'text':
+        if type(dataset) == 'TextDataset':
             DataLoader: A PyTorch DataLoader object for text output.
-        elif datashape == 'embedding':
+        elif type(dataset) == 'EmbeddingDataset':
             1. DataLoader: A PyTorch DataLoader object for embedding output.
             2. tuple: An (X, y) tuple for other scikit models.
     '''
     print(f'[Dataloader Status]: Loading the dataset...')
     
-    if datashape == 'text':
-        if embedding_method:
-            print(f'[Warning]: You provided an embedding method despite datashape=text. Returning textual dataloader.')
+    if type(dataset) == TextDataset:
         # For text-based loading, directly return a DataLoader using the raw dataset
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
         print(f'[Dataloader Status]: Done.')
-        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        return dataloader
 
-    elif datashape == 'embedding':
-        # Ensure you have an embedder instance
-        if not embedder:
-            raise ValueError("Embedder instance must be provided when datashape='embedding'.")
-        
-        # Wrap the original TextDataset with the EmbeddingDataset class
-        embedding_dataset = EmbeddingDataset(text_dataset=dataset, embedder=embedder, embedding_method=embedding_method)
-        
+    elif type(dataset) == EmbeddingDataset:        
         # Prep the output
-        dataloader = DataLoader(embedding_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        for batch_idx, (X_batch, y_batch) in enumerate(dataloader):
+            if batch_idx == 0:  # Only check the first batch
+                y_batch_np = y_batch.numpy()  # Convert to numpy for comparison
+                print(f'[Batch {batch_idx}] Glimpse of labels: {y_batch_np[:5]} (Batch size: {len(y_batch_np)})')
+                break
         
         # Use precomputed embeddings and labels directly from the EmbeddingDataset
-        X = embedding_dataset.embeddings.numpy()  # Already precomputed in EmbeddingDataset
-        y = embedding_dataset.labels.numpy()      # Already precomputed in EmbeddingDataset
-
-        print(f'[Dataloader Status]: Done.')
+        X = dataset.embeddings.numpy()  # Already precomputed in EmbeddingDataset
+        y = dataset.labels.numpy()      # Already precomputed in EmbeddingDataset
+        print('[Dataloader Status]: Done. Glimpse of true labels: ', y[:5], 'Length: ', len(y))
         return dataloader, (X, y)
     else:
-        raise ValueError(f"Unsupported datashape: {datashape}. Choose 'text' or 'embedding'.")
-
-
+        raise ValueError(f"Unsupported Dataset type: {type(dataset)}. Pass TextDataset or EmbeddingDataset.")
+    
+    
 if __name__ == "__main__":
     # Initialize Dataset
     dataset = TextDataset(
@@ -363,17 +382,25 @@ if __name__ == "__main__":
     # Save dataset to CSV for inspection
     dataset.save_to_csv('augmented_dataset_tmp.csv')
     
-    # Create Dataloader
-    embedder = Embedder()
+    # Create Embedding Dataset
+    embedding_dataset = EmbeddingDataset(data_path=DATA_PATH,
+                                        subset=SUBSET,
+                                        id_column_idx=ID_COLUMN_IDX,
+                                        comment_column_idx=COMMENT_COLUMN_IDX,
+                                        label_column_idx=LABEL_COLUMN_IDX,
+                                        subset_column_idx=SUBSET_COLUMN_IDX,
+                                        augmented_classes=AUGMENTED_CLASSES,
+                                        augmentation_ratio=AUGMENTATION_RATIO,
+                                        augmentation_methods=AUGMENTATION_METHODS,
+                                        adversation_ratio = ADVERSATION_RATIO,
+                                        embedder=Embedder(), 
+                                        embedding_method=EMBEDDING_METHOD)
     
     # Get the DataLoader with embeddings
     # Note the multiple objects outputted here
-    dataloader = get_dataloader(dataset, 
-                                embedder=embedder, 
-                                datashape=DATALOADER_SHAPE, 
-                                embedding_method=EMBEDDING_METHOD, 
+    dataloader = get_dataloader(embedding_dataset,  
                                 batch_size=BATCH_SIZE,
-                                shuffle=True, 
+                                shuffle=False, 
                                 num_workers=2)
     
     

@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score, classification_report
 # Local Code
 from Config.classifiers_config import *
 from Config.dataset_config import *
-from dataset import TextDataset, get_dataloader
+from dataset import EmbeddingDataset, get_dataloader
 from embedder import Embedder
 
 # Setting random seeds for reproducibility
@@ -63,15 +63,17 @@ class DNN(nn.Module):
         return self.model(x)
     
 class Classifier:
-    def __init__(self, config, model_type):
+    def __init__(self, config, model_type, log=True):
         """
         Initializes the classifier based on the model type and configuration.
 
         Args:
             config (dict): Configuration for the model. Format varies based on the model type.
             model_type (str): One of "logistic_regression", "svm", "xgboost", or "dnn".
+            log (bool): Print the loss progress? Redundent if epochs are optimized externally.
         """
         self.model_type = model_type
+        self.log = log
 
         if model_type in ["logistic_regression", "dnn"]:
             # A one layered logistic regression implementation using the DNN class
@@ -98,10 +100,10 @@ class Classifier:
         """
         train_dataloader, (X_train, y_train) = train_data_package
         if self.model_type in ["svm", "xgboost"]:
-            print(f'[Model Fit Status]: Fitting the model...')
+            self.log and print(f'[Model Fit Status]: Fitting the model...')
             self.model.fit(X_train, y_train)
         elif self.model_type in ["logistic_regression", "dnn"]:
-            print(f'[Model Fit Status]: Fitting the model...')
+            self.log and print(f'[Model Fit Status]: Fitting the model...')
             self.model.train()
             for epoch in range(self.num_epochs):
                 for _, (features, labels) in enumerate(train_dataloader):
@@ -110,7 +112,7 @@ class Classifier:
                     loss = self.criterion(outputs.squeeze(), labels.long())
                     loss.backward()
                     self.optimizer.step()
-                print(f"Epoch {epoch + 1}: Loss = {loss.item()}")
+                self.log and print(f"Epoch {epoch + 1}: Training Loss = {loss.item()}")
 
 
     def predict(self, test_data_package):
@@ -128,10 +130,10 @@ class Classifier:
         predictions = []
         test_dataloader, (X_test, _) = test_data_package
         if self.model_type in ["svm", "xgboost"]:
-            print(f'[Model Pred Status]: Generating predictions...')
+            self.log and print(f'[Model Pred Status]: Generating predictions...')
             predictions = self.model.predict(X_test)
         elif self.model_type in ["logistic_regression", "dnn"]:
-            print(f'[Model Pred Status]: Generating predictions...')
+            self.log and print(f'[Model Pred Status]: Generating predictions...')
             self.model.eval()
             with torch.no_grad():
                 for _, (features, _) in enumerate(test_dataloader):
@@ -155,6 +157,7 @@ def calculate_accuracy(predictions, test_data_package, valid_labels=[0,1,2]):
     '''
     test_dataloader, (X_test, y_test) = test_data_package
     true_labels = y_test
+    print('Glimpse of true labels: ', true_labels[:10], 'Length: ', len(true_labels))
     
     # If valid_labels are provided, filter out the bad labels
     if valid_labels:
@@ -163,6 +166,7 @@ def calculate_accuracy(predictions, test_data_package, valid_labels=[0,1,2]):
         true_labels = [label for label, mask in zip(true_labels, valid_mask) if mask]
         predictions = [pred for pred, mask in zip(predictions, valid_mask) if mask]
     
+    print('Glimpse of true labels after cleanup: ', true_labels[:10], 'Length: ', len(true_labels))
     # Calculate accuracy
     accuracy = accuracy_score(true_labels, predictions)
     
@@ -173,59 +177,62 @@ def calculate_accuracy(predictions, test_data_package, valid_labels=[0,1,2]):
 if __name__ == "__main__":
     print(f'[Testing Status]: Building datasets and dataloaders...')
     print(f'[Testing Status]: Building train dataloader...')
-    train_dataset = TextDataset(
-        data_path=DATA_PATH,
-        subset=SUBSET,
-        id_column_idx=ID_COLUMN_IDX,
-        comment_column_idx=COMMENT_COLUMN_IDX,
-        label_column_idx=LABEL_COLUMN_IDX,
-        subset_column_idx=SUBSET_COLUMN_IDX,
-        augmented_classes=AUGMENTED_CLASSES,
-        augmentation_ratio=AUGMENTATION_RATIO,
-        adversation_ratio=ADVERSATION_RATIO
-    )
+    # Create Embedding Dataset
+    train_dataset = EmbeddingDataset(data_path=DATA_PATH,
+                                        subset=SUBSET,
+                                        id_column_idx=ID_COLUMN_IDX,
+                                        comment_column_idx=COMMENT_COLUMN_IDX,
+                                        label_column_idx=LABEL_COLUMN_IDX,
+                                        subset_column_idx=SUBSET_COLUMN_IDX,
+                                        augmented_classes=AUGMENTED_CLASSES,
+                                        augmentation_ratio=AUGMENTATION_RATIO,
+                                        augmentation_methods=AUGMENTATION_METHODS,
+                                        adversation_ratio = ADVERSATION_RATIO,
+                                        embedder=Embedder(), 
+                                        embedding_method=EMBEDDING_METHOD)
     
-    train_data_package = get_dataloader(train_dataset, 
-                                embedder=Embedder(),
-                                datashape=DATALOADER_SHAPE, 
-                                embedding_method=EMBEDDING_METHOD, 
-                                batch_size=BATCH_SIZE, 
-                                shuffle=True, 
+    # Get the DataLoader with embeddings
+    # Note the multiple objects outputted here
+    train_data_package = get_dataloader(train_dataset,  
+                                batch_size=BATCH_SIZE,
+                                shuffle=False, 
                                 num_workers=2)
     
     print(f'[Testing Status]: Building test dataloader...')
-    test_dataset = TextDataset(
-        data_path=DATA_PATH,
-        subset='TEST',
-        id_column_idx=ID_COLUMN_IDX,
-        comment_column_idx=COMMENT_COLUMN_IDX,
-        label_column_idx=LABEL_COLUMN_IDX,
-        subset_column_idx=SUBSET_COLUMN_IDX,
-        augmented_classes=[],
-        augmentation_ratio=0,
-        adversation_ratio=0
-    )
+    test_dataset = EmbeddingDataset(data_path=DATA_PATH,
+                                        subset='TEST',
+                                        id_column_idx=ID_COLUMN_IDX,
+                                        comment_column_idx=COMMENT_COLUMN_IDX,
+                                        label_column_idx=LABEL_COLUMN_IDX,
+                                        subset_column_idx=SUBSET_COLUMN_IDX,
+                                        augmented_classes=[],
+                                        augmentation_ratio=0,
+                                        augmentation_methods=[],
+                                        adversation_ratio = 0,
+                                        embedder=Embedder(), 
+                                        embedding_method=EMBEDDING_METHOD)
     
-    test_data_package = get_dataloader(test_dataset,
-                                    embedder=Embedder(), 
-                                    datashape=DATALOADER_SHAPE, 
-                                    embedding_method=EMBEDDING_METHOD, 
-                                    batch_size=BATCH_SIZE, 
-                                    shuffle=False, 
-                                    num_workers=2)
+    # Get the DataLoader with embeddings
+    # Note the multiple objects outputted here
+    test_data_package = get_dataloader(test_dataset,  
+                                batch_size=BATCH_SIZE,
+                                shuffle=False, 
+                                num_workers=2)
     
     # Choose a model
     print(f'[Testing Status]: Fitting a classifier...')
     model_config = MODEL_CONFIG.get(MODEL_TYPE)
 
     # Initialize and train the model
-    classifier = Classifier(model_config, MODEL_TYPE)
+    classifier = Classifier(model_config, 
+                            model_type=MODEL_TYPE,
+                            log=False)
     classifier.fit(train_data_package)
 
     # Test the model
     print(f'[Testing Status]: Testing on test subset...')
     predictions = classifier.predict(test_data_package)
-    
+
     # Show accuracy score per class + macro (classification report)
     # Calculate accuracy and show classification report
     accuracy, report = calculate_accuracy(predictions, test_data_package)

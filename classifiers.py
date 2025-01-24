@@ -179,15 +179,16 @@ if __name__ == "__main__":
     print(f'[Testing Status]: Building train dataloader...')
     # Create Embedding Dataset
     train_dataset = EmbeddingDataset(data_path=DATA_PATH,
-                                        subset=SUBSET,
+                                        subset='TRAIN',
                                         id_column_idx=ID_COLUMN_IDX,
                                         comment_column_idx=COMMENT_COLUMN_IDX,
                                         label_column_idx=LABEL_COLUMN_IDX,
                                         subset_column_idx=SUBSET_COLUMN_IDX,
                                         augmented_classes=AUGMENTED_CLASSES,
-                                        augmentation_ratio=AUGMENTATION_RATIO,
+                                        augmentation_ratio=0,
                                         augmentation_methods=AUGMENTATION_METHODS,
                                         adversation_ratio = ADVERSATION_RATIO,
+                                        undersampling_targets=UNDERSAMPLING_TARGETS,
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
     
@@ -209,6 +210,7 @@ if __name__ == "__main__":
                                         augmentation_ratio=0,
                                         augmentation_methods=[],
                                         adversation_ratio = 0,
+                                        undersampling_targets={},
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
     

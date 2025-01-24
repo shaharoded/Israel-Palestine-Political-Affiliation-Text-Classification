@@ -4,8 +4,8 @@ MODEL_TYPE = 'logistic_regression'  # Choose from [dnn, logistic_regression, svm
 MODEL_CONFIG = {
     "logistic_regression": {
         "num_epochs": 1,  # Do not modify in optimization
-        "learning_rate": 1e-3,
-        "weight_decay": 1e-4,
+        "learning_rate": 1.574e-05, # Optimized Value
+        "weight_decay": 9.37e-05,  # Optimized Value
         "batch_norm": False,    # Do not modify in optimization
         "drop_out": 0.0,    # Do not modify in optimization
         "layers": [768, 3]  # Do not modify in optimization

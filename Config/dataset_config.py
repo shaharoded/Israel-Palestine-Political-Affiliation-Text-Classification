@@ -10,7 +10,7 @@ EMBEDDING_DIR_PATH = os.path.join(project_root, 'Embedding')
 DATA_PATH = os.path.join(DATA_DIR_PATH, 'full_research_data_tagged.csv')  # Full path to the data file
 EMBEDDING_PATH = os.path.join(EMBEDDING_DIR_PATH, "distilbert-finetuned")  # Full path to the embedding directory
 TFIDF_PATH = os.path.join(EMBEDDING_DIR_PATH, 'tfidf/tfidf_vectorizer.pkl')  # Full path to the TF-IDF vectorizer
-SUBSET = 'B'    # Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
+SUBSET = 'TRAIN'    # Choose between TRAIN or TEST, one for finetune & optimization and one for testing.
 
 # Relevant Columns
 ID_COLUMN_IDX = 0
@@ -23,6 +23,13 @@ AUGMENTED_CLASSES = ['Pro-Israel', 'Pro-Palestine'] # Classes to augment.
 AUGMENTATION_RATIO = 0    # Increase in the comments number, int. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
 AUGMENTATION_METHODS = ['deletion', 'swap', 'wordnet']    # Add from 'deletion', 'swap', 'wordnet'
 ADVERSATION_RATIO = 0.2 # Replacement ratio within the comment.
+
+# Undersampling (maximal number of records per class)
+UNDERSAMPLING_TARGETS = {
+    "Pro-Palestine": 5500,
+    "Pro-Israel": 5500,
+    "Undefined": 5500
+}
 
 # Embedding
 EMBEDDING_METHOD = "distilbert"     # "distilbert" or "tf-idf"

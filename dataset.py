@@ -106,27 +106,28 @@ class TextDataset(Dataset):
     Will load the text comments and allow a dataloader that will get them as vectors or embeddings.
     '''
     def __init__(self, data_path, subset, id_column_idx, comment_column_idx, label_column_idx, subset_column_idx,
-                 augmented_classes=None, augmentation_ratio=3.0, augmentation_methods = ['wordnet'], adversation_ratio=0.1):
+                 augmented_classes=[], augmentation_ratio=3.0, augmentation_methods = ['wordnet'], adversation_ratio=0.1, undersampling_targets={}):
         self.data_path = data_path
         self.subset = subset
         self.id_column_idx = id_column_idx
         self.comment_column_idx = comment_column_idx
         self.label_column_idx = label_column_idx
         self.subset_column_idx = subset_column_idx
-        self.augmented_classes = augmented_classes or []
-        self.augmentation_ratio = augmentation_ratio        
+        self.augmented_classes = augmented_classes
+        self.augmentation_ratio = augmentation_ratio
+        self.undersampling_targets = undersampling_targets       
 
         # Load data
         self.data = self.__load_and_filter_data()
         
         # Process data (text, remove nan, remove short comments)
         self.data = self.__preprocess_data()
-        
+        print('dataset size: ', len(self.data))
         # Augment data
         if self.augmented_classes and self.augmentation_ratio > 0 and adversation_ratio > 0:
             self.augmenter = TextAugmenter(adversation_ratio=adversation_ratio, 
                                         methods=augmentation_methods)
-            self.data = self.__augment_data()
+            self.data = self.__augment_data()            
         else:
             print(f'[Dataset Status]: No Augmentation was chosen (augmentation/ adversation ratio == 0 or no augmented_classes). Moving on...')
 
@@ -139,7 +140,14 @@ class TextDataset(Dataset):
             # Fallback to another encoding if utf-8 fails
             df = pd.read_csv(self.data_path, encoding='ISO-8859-1')
         subset_data = df[df.iloc[:, self.subset_column_idx] == self.subset]
-        return subset_data
+        if self.undersampling_targets:
+            print(f'[Dataset Status]: Undersampeling the dataset...')
+            sampled_subset_data = pd.DataFrame()
+            for label, target_size in self.undersampling_targets.items():
+                class_subset_df = subset_data[subset_data.iloc[:, self.label_column_idx] == label]
+                sampled_class_df = class_subset_df.sample(n=min(target_size, len(class_subset_df)), random_state=42)
+                sampled_subset_data = pd.concat([sampled_subset_data, sampled_class_df])
+        return sampled_subset_data if self.undersampling_targets else subset_data
 
     def __preprocess_data(self):
         """
@@ -230,13 +238,13 @@ class EmbeddingDataset(Dataset):
     If a strict NN based model is selected as best model, there is no need for the pre-computation.
     '''
     def __init__(self, data_path, subset, id_column_idx, comment_column_idx, label_column_idx, subset_column_idx,
-                 augmented_classes, augmentation_ratio, augmentation_methods, adversation_ratio, embedder, embedding_method):
+                 augmented_classes, augmentation_ratio, augmentation_methods, adversation_ratio, undersampling_targets, embedder, embedding_method):
         """
         Creates the Dataset instance which fits the classification task.
         Most recurrent parameters are used to initiate the TextDataset in the init.
         Args:
             data_path (str): The path to the .csv data file.
-            subset (str): Choose between A, B or TEST, one for embedding finetune, one for classification optimization and one for testing.
+            subset (str): Choose between TRAIN or TEST, one for embedding finetune and optimization and one for testing.
             id_column_idx (int): Idx for the ID column in the dataframe.
             comment_column_idx (int): Idx for the text column in the dataframe.
             label_column_idx (int): Idx for the label column in the dataframe.
@@ -245,6 +253,7 @@ class EmbeddingDataset(Dataset):
             augmentation_ratio (int): Increase in the comments number. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
             augmentation_methods (list): Choose from ['deletion', 'swap', 'wordnet'].
             adversation_ratio (float): Replacement ratio within the comment.
+            undersampling_targets (dict): A mapping object of how much to undersample each class.
             embedder (Embedder): Embedder instance for generating embeddings.
             embedding_method (str): Method for embedding generation (e.g., 'distilbert', 'tf-idf').
         """
@@ -258,7 +267,8 @@ class EmbeddingDataset(Dataset):
                             augmented_classes=augmented_classes,
                             augmentation_ratio=augmentation_ratio,
                             augmentation_methods=augmentation_methods,
-                            adversation_ratio = adversation_ratio
+                            adversation_ratio = adversation_ratio,
+                            undersampling_targets=undersampling_targets
                             )
         self.embedder = embedder
         self.embedding_method = embedding_method
@@ -268,7 +278,8 @@ class EmbeddingDataset(Dataset):
         os.makedirs(self.data_dir, exist_ok=True)
 
         # File path for the precomputed embeddings
-        self.cache_file = os.path.join(self.data_dir, f"subset {subset}_augmentation={augmentation_ratio}_embeddings_{embedding_method}.pkl")
+        action = 'undersampled' if undersampling_targets else f'augmentation={augmentation_ratio}'
+        self.cache_file = os.path.join(self.data_dir, f"subset {subset}_{action}_embeddings_{embedding_method}.pkl")
 
         # Load or generate embeddings
         if os.path.exists(self.cache_file):
@@ -376,9 +387,11 @@ if __name__ == "__main__":
         augmented_classes=AUGMENTED_CLASSES,
         augmentation_ratio=AUGMENTATION_RATIO,
         augmentation_methods=AUGMENTATION_METHODS,
-        adversation_ratio = ADVERSATION_RATIO
+        adversation_ratio = ADVERSATION_RATIO,
+        undersampling_targets=UNDERSAMPLING_TARGETS
     )
 
+    
     # Save dataset to CSV for inspection
     dataset.save_to_csv('augmented_dataset_tmp.csv')
     
@@ -393,6 +406,7 @@ if __name__ == "__main__":
                                         augmentation_ratio=AUGMENTATION_RATIO,
                                         augmentation_methods=AUGMENTATION_METHODS,
                                         adversation_ratio = ADVERSATION_RATIO,
+                                        undersampling_targets=UNDERSAMPLING_TARGETS,
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
     

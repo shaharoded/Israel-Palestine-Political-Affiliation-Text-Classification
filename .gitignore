@@ -2,6 +2,8 @@
 secret_keys.py
 subset_data.py
 augmented_dataset_tmp.csv
+classification_results.csv
+Preprocessed_Dataset.csv
 
 # Ignore an entire folder
 Data/

@@ -4,12 +4,13 @@ fit and predict.
 '''
 import random
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 
 # Local Code
 from Config.classifiers_config import *
@@ -115,7 +116,7 @@ class Classifier:
                 self.log and print(f"Epoch {epoch + 1}: Training Loss = {loss.item()}")
 
 
-    def predict(self, test_data_package):
+    def predict(self, test_data_package, return_df=False):
         """
         Predicts labels for the given test data.
         Works with the output of the function get_dataloader which gets the desired datashape
@@ -123,12 +124,12 @@ class Classifier:
 
         Args:
             test_data_package (tuple): A tuple containing (DataLoader, (X, y))
-
+            return_df (bool): Will return the predictions as a df, allowing for easier analysis.
         Returns:
             list: Predicted labels.
         """
         predictions = []
-        test_dataloader, (X_test, _) = test_data_package
+        test_dataloader, (X_test, y_test) = test_data_package
         if self.model_type in ["svm", "xgboost"]:
             self.log and print(f'[Model Pred Status]: Generating predictions...')
             predictions = self.model.predict(X_test)
@@ -140,38 +141,44 @@ class Classifier:
                     outputs = self.model(features.float())  # outputs.shape should be (batch_size, 3)
                     _, predictions_batch = torch.max(outputs, 1)  # Get the index of the max probability for each sample
                     predictions.extend(predictions_batch.int().tolist())  # Append predictions
+
         return predictions
 
     
 # Function to calculate model's accuracy
-def calculate_accuracy(predictions, test_data_package, valid_labels=[0,1,2]):
+def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
     '''
     Uses the y_test from test_data_package to evaluate the model while ignoring bad labels.
     
     Args:
+        predictions (list): Predicted labels from the model.
         test_data_package (tuple): A tuple containing (DataLoader, (X_test, y_test)).
         valid_labels (list): A list of valid labels to consider for the report.
         
-    Return:
-        tuple: (accuracy (float), classification_report)
+    Returns:
+        tuple: (F1 (float), classification_report)
     '''
-    test_dataloader, (X_test, y_test) = test_data_package
-    true_labels = y_test
-    print('Glimpse of true labels: ', true_labels[:10], 'Length: ', len(true_labels))
+    test_dataloader, (X_test, true_labels) = test_data_package
+    print('[Debug] Glimpse of true labels:', true_labels[:10], 'Length:', len(true_labels))
     
-    # If valid_labels are provided, filter out the bad labels
-    if valid_labels:
-        # Only consider the valid labels for true and predicted values
-        valid_mask = [label in valid_labels for label in true_labels]
-        true_labels = [label for label, mask in zip(true_labels, valid_mask) if mask]
-        predictions = [pred for pred, mask in zip(predictions, valid_mask) if mask]
+    # Print confusion matrix (truth table)
+    conf_matrix = confusion_matrix(true_labels, predictions, labels=valid_labels)
+    print("\nConfusion Matrix (Truth Table):")
+    conf_matrix_df = pd.DataFrame(conf_matrix, 
+                                  index=[f"True {label}" for label in valid_labels], 
+                                  columns=[f"Pred {label}" for label in valid_labels])
+    print(conf_matrix_df)
     
-    print('Glimpse of true labels after cleanup: ', true_labels[:10], 'Length: ', len(true_labels))
-    # Calculate accuracy
-    accuracy = accuracy_score(true_labels, predictions)
+    # Print F1-score (micro)
+    f1_micro = f1_score(true_labels, predictions, average='micro')
+    print(f"\nF1-Score (Micro): {f1_micro:.4f}")
     
     # Return accuracy and classification report
-    return accuracy, classification_report(true_labels, predictions, zero_division=0)
+    class_report = classification_report(true_labels, predictions, zero_division=0)
+    print("\nClassification Report:")
+    print(class_report)
+    
+    return f1_micro, class_report
 
     
 if __name__ == "__main__":
@@ -185,10 +192,10 @@ if __name__ == "__main__":
                                         label_column_idx=LABEL_COLUMN_IDX,
                                         subset_column_idx=SUBSET_COLUMN_IDX,
                                         augmented_classes=AUGMENTED_CLASSES,
-                                        augmentation_ratio=0,
+                                        augmentation_ratio=AUGMENTATION_RATIO,
                                         augmentation_methods=AUGMENTATION_METHODS,
                                         adversation_ratio = ADVERSATION_RATIO,
-                                        undersampling_targets=UNDERSAMPLING_TARGETS,
+                                        undersampling_targets={},
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
     
@@ -234,10 +241,23 @@ if __name__ == "__main__":
     # Test the model
     print(f'[Testing Status]: Testing on test subset...')
     predictions = classifier.predict(test_data_package)
+    
+        # Extract comment IDs and real labels from the test dataset
+    test_comment_ids = test_dataset.comment_ids  # Assuming it's stored as an attribute
+    real_labels = test_dataset.labels.numpy()    # Convert to numpy if stored as a tensor
+    
+    # Create a DataFrame for predictions
+    results_df = pd.DataFrame({
+        "Comment ID": test_comment_ids,
+        "Real Label": real_labels,
+        "Predicted Label": predictions
+    })
+
+    # Save the DataFrame to a CSV file
+    results_csv_path = "classification_results.csv"
+    results_df.to_csv(results_csv_path, index=False)
+    print(f"Results saved to {results_csv_path}")
 
     # Show accuracy score per class + macro (classification report)
     # Calculate accuracy and show classification report
-    accuracy, report = calculate_accuracy(predictions, test_data_package)
-    print(f"Accuracy: {accuracy * 100:.2f}%")
-    print("Classification Report:")
-    print(report)
+    _, _ = assess_model(predictions, test_data_package)

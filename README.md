@@ -1,16 +1,21 @@
 # Israel-Palestine-Political-Affiliation-Text-Classification
-Work in progress...
 
 ## Overview
-This project focuses on creating a machine learning (ML) and deep learning (DL) pipeline for classifying social media comments related to the Israel-Palestine conflict into distinct political affiliations. To enable this, the project includes an **Automated Tagger** module that generates labeled data for training ML and DL models, otherwise untagged as in the original dataset.
+This project aims to develop a robust machine learning (ML) and deep learning (DL) framework for classifying social media comments related to the Israel-Palestine conflict into distinct political affiliations: Pro-Israel, Pro-Palestinian, and Undefined. A key component of this project is the **Automated Tagger**, which leverages a Large Language Model (LLM) to generate labeled datasets, addressing the challenge of untagged data in the original dataset.
+
+Using the automated tagger as benchmark and combining advanced contextual embeddings with optimized ML classifiers, this project seeks to set a new benchmark in nuanced text classification tasks.
+
+![Methodology](Images/methodology_scheme.png)
 
 ## Features
 - **Automated Tagger**: A module to generate labeled datasets from untagged social media comments (`llm_tagger`) using a Large Language Model (LLM) by OpenAI.
 - **Dataset Class**: Responsible for text preprocessing for both classification process, augmentation, adversation and for handeling the dataloading for textual data (for finetuning of embedder) and for classifier training (creating an embedded dataset).
 - **Customizable Configurations**: Easily adjustable parameters for LLM settings, , dataset settings, best model's configurations, and testing modes. Each major component has it's own configurations file under `Config` folder.
+Note the the current configurations are the ones for the best performing model based on our research.
+- **Analysis**: Within this folder you can find the analysis, tests and optimizations that took place in the process.
 
 ## Usage
-1. Configure settings in the `Config` file:
+1. Configure settings in the `Config` files, one for auto-tagger, one for dataset and one for the classifiers:
    - Define file paths.
    - Set parameters (eg. OpenAI engine), augmentation ratio, and test batch size.
 2. Ensure `secret_keys.py` is in place with your OpenAI API key.
@@ -27,6 +32,8 @@ The `llm_tagger.py` module provides functionality to generate labels for an unta
   - Outputs a fully labeled dataset in `OUTPUT_FILE_PATH`.
   - Used to prepare training data for ML/DL models.
 
+The automated tagger reached `F1 Score = 91%` on the manually tagged subset.
+
 ### Running the Dataset
 The `dataset.py` module is pretty straight forward and can be run through `main.py`. Adjust the path and choose the subset you wish to work with (pre-divided), set up the file paths for the research data and vectorization weights, set augmentation ratio, traget groups and the data shape of the dataloader, meaning - this module will create a textual dataloader on defualt, assuming you have yet trained a model, but on demand will create a vectorized dataset (with embeddings for comments), under the assumption you have already fine-tuned a model, and have it's weights available. The vectorized dataset, once created under certain configurations will be saved as a pickle file to act as cache. If you'll delete this file you'll have to re-calculate the dataset. Not recommended.
 This module uses the `embedder.py` module for that, and will create a dataloder fit for the classification task. Before calling a classification task be sure to set in `dataset_config.py` the parameter `DATALOADER_SHAPE = 'embedding'`, and pay attention that the `EMBEDDING_METHOD` matches your intention.
@@ -38,6 +45,7 @@ The `classifiers.py` module controls the training pipeline. It assumes you are a
 
 When activated directly, this module allows you to test different configurations manually and assess the models while training on `SUBSET=B` and testing on `SUBSET=TEST`.
 
+The classifier reached a total F1 score of `83.6%` on the complete test set.
 
 ### Installation
 Set up the environment and install dependencies:

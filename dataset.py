@@ -139,7 +139,7 @@ class TextDataset(Dataset):
         except UnicodeDecodeError:
             # Fallback to another encoding if utf-8 fails
             df = pd.read_csv(self.data_path, encoding='ISO-8859-1')
-        subset_data = df[df.iloc[:, self.subset_column_idx] == self.subset]
+        subset_data = df[df.iloc[:, self.subset_column_idx] == self.subset] if self.subset else df
         if self.undersampling_targets:
             print(f'[Dataset Status]: Undersampeling the dataset...')
             sampled_subset_data = pd.DataFrame()
@@ -270,6 +270,7 @@ class EmbeddingDataset(Dataset):
                             adversation_ratio = adversation_ratio,
                             undersampling_targets=undersampling_targets
                             )
+        self.comment_ids = [row[id_column_idx] for row in self.text_dataset]
         self.embedder = embedder
         self.embedding_method = embedding_method
         self.subset = subset

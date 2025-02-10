@@ -43,7 +43,7 @@ The trained weights for both models can be loaded from [this link](https://drive
 ### Training a Classifier
 The `classifiers.py` module controls the training pipeline. It assumes you are already capable of creating a vectorized dataloader and will use it, and the tested configurations for the best ML model to train a classifier for the task. The best configurations were tested seperatly using 'Optuna' (analysis available at Analysis folder). This module allows you to choose between different model configurations.
 
-When activated directly, this module allows you to test different configurations manually and assess the models while training on `SUBSET=B` and testing on `SUBSET=TEST`.
+When activated directly, this module allows you to test different configurations manually and assess the models while training on `SUBSET=TRAIN` and testing on `SUBSET=TEST`.
 
 The classifier reached a total F1 score of `83.6%` on the complete test set.
 

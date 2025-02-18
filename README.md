@@ -3,13 +3,14 @@
 ## Overview
 This project aims to develop a robust machine learning (ML) and deep learning (DL) framework for classifying social media comments related to the Israel-Palestine conflict into distinct political affiliations: Pro-Israel, Pro-Palestinian, and Undefined. A key component of this project is the **Automated Tagger**, which leverages a Large Language Model (LLM) to generate labeled datasets, addressing the challenge of untagged data in the original dataset.
 
-Using the automated tagger as benchmark and combining advanced contextual embeddings with optimized ML classifiers, this project seeks to set a new benchmark in nuanced text classification tasks.
+Using the automated tagger as benchmark and combining advanced contextual embeddings with optimized ML classifiers, this project seeks to set a new benchmark in nuanced text classification tasks with a simple, cheap and scaleable process.
 
 ![Methodology](Images/methodology_scheme.png)
 
 ## Features
-- **Automated Tagger**: A module to generate labeled datasets from untagged social media comments (`llm_tagger`) using a Large Language Model (LLM) by OpenAI.
-- **Dataset Class**: Responsible for text preprocessing for both classification process, augmentation, adversation and for handeling the dataloading for textual data (for finetuning of embedder) and for classifier training (creating an embedded dataset).
+- **Automated Tagger**: A module to generate labeled datasets from untagged social media comments (`llm_tagger.py`) using a Large Language Model (LLM) by OpenAI.
+- **Flexible Dataset Class**: Responsible for text preprocessing for both classification process, augmentation, adversation and for handeling the dataloading for textual data (for finetuning of embedder) and for classifier training (creating an embedded dataset). Can switch from TF-IDF based embedding to Distil-BERT based embedding. Will handle caching the processed data for future use without the need to re-process.
+- **Classifier**: Responsible for the flexible initialization and training of a classifier head, designated to train on top of the vectorized dataset (`classifiers.py`).
 - **Customizable Configurations**: Easily adjustable parameters for LLM settings, , dataset settings, best model's configurations, and testing modes. Each major component has it's own configurations file under `Config` folder.
 Note the the current configurations are the ones for the best performing model based on our research.
 - **Analysis**: Within this folder you can find the analysis, tests and optimizations that took place in the process.

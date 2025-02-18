@@ -64,6 +64,10 @@ git commit -m "commit message"
 git push -f origin main
 ````
 
+## Final Draft of the Paper
+In this link, you may find the final draft for this paper, hoping it will be published soon:  
+[📄 View Final Draft](https://drive.google.com/file/d/1NNCZqMsk0gYNtxtj4JviBk_mlpi88th0/view?usp=sharing)
+
 # Related Work: Israel-Palestine-War-Reddit-Analysis
 For users interested in analyzing the dynamics of this social media discussion, I recommend my related project: [Israel-Palestine Text Analysis](https://github.com/shaharoded/Israel-Palestine-War-Reddit-Analysis). This project provides a visualization dashboard to explore and compare Pro-Israel and Pro-Palestinian online behavior based on various NLP metrics, including sentiment distribution, toxicity, and topic-based analysis. Built using Streamlit and Plotly, it enables interactive, within- and between-group comparisons of speech styles and tendencies.
 

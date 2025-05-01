@@ -11,12 +11,12 @@ from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 import pandas as pd
 
 # Local Code
-from secret_keys import OPENAI_API_KEY
+from secret_keys import OPENAI_API_KEYS
 from Config.data_tagging_config import *
 
 
 # Set your OpenAI API key in a SecretKeys.py file
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEYS.get('shahar_personal_key'))
 TOKENIZER = BertTokenizer.from_pretrained('bert-base-cased')
 
 

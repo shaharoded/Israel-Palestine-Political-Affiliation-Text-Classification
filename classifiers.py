@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
 # Local Code
 from Config.classifiers_config import *
@@ -74,6 +74,7 @@ class Classifier:
             log (bool): Print the loss progress? Redundent if epochs are optimized externally.
         """
         self.model_type = model_type
+        self.model_params = config          # save for cloning
         self.log = log
 
         if model_type in ["logistic_regression", "dnn"]:

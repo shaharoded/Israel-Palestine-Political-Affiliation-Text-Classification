@@ -33,7 +33,7 @@ The `llm_tagger.py` module provides functionality to generate labels for an unta
   - Outputs a fully labeled dataset in `OUTPUT_FILE_PATH`.
   - Used to prepare training data for ML/DL models.
 
-The automated tagger reached `F1 Score = 91%` on the manually tagged subset (~1050 comments).
+The automated tagger reached `F1 Score = 0.88` on the manually tagged subset (~1050 comments).
 
 ### Running the Dataset
 The `dataset.py` module is pretty straight forward and can be run through its `__main__`. Adjust the path and choose the subset you wish to work with (pre-divided), set up the file paths for the research data and vectorization weights, set augmentation ratio, traget groups and the data shape of the dataloader, meaning - this module will create a textual dataloader on defualt, assuming you have yet trained a model, but on demand will create a vectorized dataset (with embeddings for comments), under the assumption you have already fine-tuned a model, and have it's weights available. The vectorized dataset, once created under certain configurations will be saved as a pickle file to act as cache. If you'll delete this file you'll have to re-calculate the dataset. Not recommended.

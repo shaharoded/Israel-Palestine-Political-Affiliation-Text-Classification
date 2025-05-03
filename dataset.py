@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 import pandas as pd
 from tqdm import tqdm
+from pathlib import Path
 import random
 import re
 import contractions
@@ -9,7 +10,6 @@ import nltk
 from nltk.corpus import wordnet, stopwords
 import torch
 from torch.utils.data import Dataset, DataLoader
-import xgboost as xgb
 
 STOPWORDS = set(stopwords.words('english'))
 
@@ -17,6 +17,30 @@ STOPWORDS = set(stopwords.words('english'))
 from Config.dataset_config import *
 from embedder import *
 
+
+# ----------------------------------------------------------------------
+# 0.  Tiny CSV cache (load once, reuse for every split)
+# ----------------------------------------------------------------------
+
+class _CSVCache:
+    '''
+    Use to avoid re-loading a CSV file multiple times
+    '''
+    df = None                 # class attribute
+
+def _load_csv(path, encoding='utf-8'):
+    if _CSVCache.df is None:             # load once, reuse for all splits
+        try:
+            _CSVCache.df = pd.read_csv(path, encoding=encoding)
+        except UnicodeDecodeError:
+            _CSVCache.df = pd.read_csv(path, encoding='ISO‑8859‑1')
+    return _CSVCache.df
+
+
+
+# ----------------------------------------------------------------------
+#  Text Augmentation methods, applied in TextDataset
+# ----------------------------------------------------------------------
 
 class TextAugmenter:
     def __init__(self, adversation_ratio=0.1, methods=None):
@@ -100,73 +124,81 @@ class TextAugmenter:
             return comment  # Fallback
 
 
+# ----------------------------------------------------------------------
+
 class TextDataset(Dataset):
-    '''
-    Creates a dataset object to interact with different ML and DL models.
-    Will load the text comments and allow a dataloader that will get them as vectors or embeddings.
-    '''
-    def __init__(self, data_path, subset, id_column_idx, comment_column_idx, label_column_idx, subset_column_idx,
-                 augmented_classes=[], augmentation_ratio=3.0, augmentation_methods = ['wordnet'], adversation_ratio=0.1, undersampling_targets={}):
-        self.data_path = data_path
-        self.subset = subset
+    """
+    Hold ALL rows (TRAIN / VAL / TEST) internally.
+    Augmentation / undersampling are applied **only** to the TRAIN rows.
+    Call get_subset('TRAIN'|'VAL'|'TEST') to obtain a view that behaves
+    like a normal torch Dataset.
+    """
+    def __init__(self, csv_path, id_column_idx, comment_column_idx, label_column_idx, split_column_idx,
+                 augmented_classes=[], augmentation_ratio=3, augmentation_methods = ['wordnet'], adversation_ratio=0.1, undersampling_targets={}):
+        """
+        Initiates the dataset, which is the base Dataset for the embeddings.
+        
+        Args:
+            csv_path (str): The path to the .csv data file.
+            id_column_idx (int): Idx for the ID column in the dataframe.
+            comment_column_idx (int): Idx for the text column in the dataframe.
+            label_column_idx (int): Idx for the label column in the dataframe.
+            split_column_idx (int): Idx for the subset column in the dataframe, indicating how to split it.
+            augmented_classes (list): A list of the classes to augment. Chose from ['Pro-Israel', 'Pro-Palestine', 'Undefined']
+            augmentation_ratio (int): Increase in the comments number. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
+            augmentation_methods (list): Choose from ['deletion', 'swap', 'wordnet'].
+            adversation_ratio (float): Replacement ratio within the comment.
+            undersampling_targets (dict): A mapping object of how much to undersample each class.
+        """
+        self.csv_path = csv_path
         self.id_column_idx = id_column_idx
         self.comment_column_idx = comment_column_idx
         self.label_column_idx = label_column_idx
-        self.subset_column_idx = subset_column_idx
-        self.augmented_classes = augmented_classes
-        self.augmentation_ratio = augmentation_ratio
-        self.undersampling_targets = undersampling_targets       
+        self.split_column_idx = split_column_idx
+        self.action = 'regular'
 
-        # Load data
-        self.data = self.__load_and_filter_data()
+        # ------------ load --------------------------------------------------
+        df = _load_csv(csv_path)
         
-        # Process data (text, remove nan, remove short comments)
-        self.data = self.__preprocess_data()
-        print('dataset size: ', len(self.data))
-        # Augment data
-        if self.augmented_classes and self.augmentation_ratio > 0 and adversation_ratio > 0:
-            self.augmenter = TextAugmenter(adversation_ratio=adversation_ratio, 
-                                        methods=augmentation_methods)
-            self.data = self.__augment_data()            
-        else:
-            print(f'[Dataset Status]: No Augmentation was chosen (augmentation/ adversation ratio == 0 or no augmented_classes). Moving on...')
+        # ------------ basic text cleaning ------------------------------------------
+        df = self.__preprocess(df)
 
-    def __load_and_filter_data(self):
-        print(f'[Dataset Status]: Loading the dataset...')
-        try:
-            # Try reading with utf-8 encoding
-            df = pd.read_csv(self.data_path, encoding='utf-8')
-        except UnicodeDecodeError:
-            # Fallback to another encoding if utf-8 fails
-            df = pd.read_csv(self.data_path, encoding='ISO-8859-1')
-        subset_data = df[df.iloc[:, self.subset_column_idx] == self.subset] if self.subset else df
-        if self.undersampling_targets:
-            print(f'[Dataset Status]: Undersampeling the dataset...')
-            sampled_subset_data = pd.DataFrame()
-            for label, target_size in self.undersampling_targets.items():
-                class_subset_df = subset_data[subset_data.iloc[:, self.label_column_idx] == label]
-                sampled_class_df = class_subset_df.sample(n=min(target_size, len(class_subset_df)), random_state=42)
-                sampled_subset_data = pd.concat([sampled_subset_data, sampled_class_df])
-        return sampled_subset_data if self.undersampling_targets else subset_data
+        # ------------ TRAIN‑only operations ----------------------------------------
+        mask_train = df.iloc[:, split_column_idx] == "TRAIN"
 
-    def __preprocess_data(self):
-        """
-        Apply text preprocessing to the comment column with a progress bar.
-        In addition, drop irrelevant comments and nans.
-        """
-        # Wrap the progress bar around the column iteration
-        tqdm.pandas(desc="Preprocessing comments")
-        self.data.iloc[:, self.comment_column_idx] = self.data.iloc[:, self.comment_column_idx].progress_apply(self.preprocess_text)
-        self.data = self.data.dropna(subset=[self.data.columns[self.comment_column_idx]])
-        self.data = self.data[
-        self.data[self.data.columns[self.comment_column_idx]].apply(lambda x: len(x.split()) >= 2)
-        ]
-        return self.data
+        if undersampling_targets:
+            df.loc[mask_train] = self._undersample(
+                df.loc[mask_train], undersampling_targets)
+            self.action = 'undersampled'
+
+        if (augmented_classes and augmentation_ratio > 0
+                and adversation_ratio > 0):
+            df = self._augment(df, mask_train,
+                             augmented_classes, augmentation_ratio,
+                             augmentation_methods, adversation_ratio)
+            self.action = 'augmented'
+
+        df.reset_index(drop=True, inplace=True)  # keep indices clean
+        self.data = df
+
+        # pre‑compute row indices per split for fast lookup
+        self.idx_split = {
+            s: np.flatnonzero(df.iloc[:, split_column_idx] == s)
+            for s in ("TRAIN", "VAL", "TEST")
+        }
+
+        print(f"[TextDataset] rows: "
+              f"train={len(self.idx_split['TRAIN'])}, "
+              f"val={len(self.idx_split['VAL'])}, "
+              f"test={len(self.idx_split['TEST'])}")
+
+    # ------------------------------------------------------------------ helpers ---
 
     @staticmethod
-    def preprocess_text(text):
+    def _normalize(text: str) -> str:
         """
         Perform basic text normalization:
+        - Replace quotes with a placeholder (to mark them)
         - Replace URLs with <URL>.
         - Replace user mentions with <USER>.
         - Clean hashtags, retaining the word only.
@@ -175,12 +207,14 @@ class TextDataset(Dataset):
         """
         replacements = {
             '“': '"', '”': '"', '‘': "'", '’': "'",
-            'â\x80\x9c': '"', 'â\x80\x9d': '"', 'â\x80\x99': "'"
+            'â\x80\x9c': '"', 'â\x80\x9d': '"', 'â\x80\x99': "'", '&#x200B;': ' ',
+            '&amp;': '&', '&lt;': '<', '&gt;': '>'
         }
 
         for bad_char, good_char in replacements.items():
             text = text.replace(bad_char, good_char)
 
+        text = re.sub(r'(^|\n)\s*(?:>|\&gt;).*?(?=\n|$)', '<QUOTE>', text) # Any line that starts with > or &gt; is a quoted parent text
         text = contractions.fix(text)  # Expand contractions
         text = " ".join(text.split())  # Normalize whitespace
         text = re.sub(r'http\S+|www\S+|https\S+', '<URL>', text, flags=re.MULTILINE)  # Replace URLs
@@ -188,31 +222,81 @@ class TextDataset(Dataset):
         text = re.sub(r'#(\w+)', r'\1', text)  # Clean hashtags, retain the word
         text = re.sub(r'[^\w\s.,!?\'"\{\(\[\-\\/:;]', '', text)  # Remove irrelevant characters
         return text
-
-    def __augment_data(self):
+    
+    def __preprocess(self, df):
         """
-        Augment the data with a progress bar to track augmentation progress.
+        Apply text preprocessing to the comment column with a progress bar.
+        In addition, drop irrelevant comments and nans.
         """
-        augmented_data = []
-        for idx, row in tqdm(self.data.iterrows(), total=len(self.data), desc="Augmenting data", unit="row"):
-            original_id = row.iloc[self.id_column_idx]
-            comment = row.iloc[self.comment_column_idx]
-            label = row.iloc[self.label_column_idx]
-            if label in self.augmented_classes:
-                for copy_number in range(1, int(self.augmentation_ratio) + 1):
-                    augmented_comment = self.augmenter.augment_comment(comment)
-                    augmented_row = row.copy()
-                    augmented_row.iloc[self.comment_column_idx] = augmented_comment
-                    augmented_row.iloc[self.id_column_idx] = f"{original_id}_Augmented_{copy_number}"
-                    augmented_data.append(augmented_row)
-        return pd.concat([self.data, pd.DataFrame(augmented_data, columns=self.data.columns)])
+        # Wrap the progress bar around the column iteration
+        tqdm.pandas(desc="Cleaning Comments")
+        df.iloc[:, self.comment_column_idx] = df.iloc[:, self.comment_column_idx].progress_apply(self._normalize)
+        df = df.dropna(subset=[df.columns[self.comment_column_idx]])
+        df = df[
+        df[df.columns[self.comment_column_idx]].apply(lambda x: len(x.split()) >= 2)
+        ]
+        return df
 
-    def save_to_csv(self, output_path):
+    def _undersample(self, df, targets: dict):
+        """
+        Performs undersampling so that all the labels will have a predefined number of rows in df (later to be self.data).
+        Args:
+            df (pd.DataFrame): The df for processing.
+            targets (Dict(str:int)): A dictionary that defined the max number of rows for each label in the output like:
+                {
+                    "Pro-Palestine": 5500,
+                    "Pro-Israel": 5500,
+                    "Undefined": 5500
+                }
+        """
+        dfs = []
+        for lab, n in targets.items():
+            lab_df = df[df.iloc[:, self.label_column_idx] == lab]
+            dfs.append(lab_df.sample(min(n, len(lab_df)), random_state=42))
+        return pd.concat(dfs, ignore_index=True)
+    
+    def _augment(self, df, mask_train, classes, ratio, methods, adv_ratio):
+        """
+        Performs augmentation using the TextAugmenter class to the classes that needs augmentation.
+        Augmentation will create |ratio| adversed copies of comments from the augmented class, giving them unique UIDs.
+        Args:
+            df (pd.DataFrame): The df for processing.
+            mask_train (pd.DataFrame): boolean mask selecting TRAIN rows inside *df*.
+            classes (List(str)): The classes to augment (class labels like "Pro-Israel").
+            ratio (int): Number of new adversed copies to add.
+            methods (List(str)): A list with the augmentation methods.
+            adv_ratio (float): Ratio of each comment (words from total comment) to adverse. 
+        
+        NOTE: All of the params are handled in the llm_config.py file.
+        """
+        aug = TextAugmenter(adv_ratio, methods)
+        train_df = df.loc[mask_train]
+        extra = []
+
+        for _, row in tqdm(train_df.iterrows(), total=len(train_df), desc="Augment", unit="row"):
+            lab = row.iloc[self.label_column_idx]
+            if lab not in classes:
+                continue
+            for i in range(int(ratio)):
+                new = row.copy()
+                new.iloc[self.comment_column_idx] = aug.augment_comment(row.iloc[self.comment_column_idx])
+                new.iloc[self.id_column_idx]  = f"{row.iloc[self.id_column_idx]}_aug{i+1}"
+                extra.append(new)
+        if extra:
+            df = pd.concat([df, pd.DataFrame(extra, columns=df.columns)], ignore_index=True)
+        return df
+
+    def save_to_csv(self, output_repo: str = "Data"):
         """
         Save the dataset to a CSV file for inspection.
         """
-        self.data.to_csv(output_path, index=False)
+        action_tag = getattr(self, "action", "regular")     # augmented / undersampled / regular
+        filename  = f"{action_tag}_research_data_for_inspection.csv"
+        out_path = Path(output_repo) / filename
+        self.data.to_csv(out_path, index=False)
+        print(f"[TextDataset] saved CSV → {out_path}")
 
+    # -------------------------- Dataset API -------------------
     def __len__(self):
         return len(self.data)
 
@@ -220,8 +304,7 @@ class TextDataset(Dataset):
         row = self.data.iloc[idx]
         comment_id = row.iloc[self.id_column_idx]
         comment = row.iloc[self.comment_column_idx]
-        label = row.iloc[self.label_column_idx]
-        encoded_label = LABELS_ENCODER.get(label)
+        encoded_label = LABELS_ENCODER.get(row.iloc[self.label_column_idx])
         return comment_id, comment, encoded_label
    
 
@@ -230,98 +313,73 @@ class EmbeddingDataset(Dataset):
     '''
     Dataset class to handle embedding generation.
     For modularity, as this object is the needed object for classification task,
-    it is responsible for the creation of the TextDataset and its modification to Embedding
+    it is responsible for the creation of the TextDatasets and their modification to Embedding
     based one.
     Caching of dataset memory is defined to avoid re-calculations of embeddings.
     The embeddings are precomputed on init to support non NN models that cannot handle
     a dataloader, so beware of memory usage.
     If a strict NN based model is selected as best model, there is no need for the pre-computation.
+
+    NOTE: One dataset will be created from a .csv file and will have TRAIN, VAL and TEST callable subsets (using _View).
     '''
-    def __init__(self, data_path, subset, id_column_idx, comment_column_idx, label_column_idx, subset_column_idx,
-                 augmented_classes, augmentation_ratio, augmentation_methods, adversation_ratio, undersampling_targets, embedder, embedding_method):
+    class _View(Dataset):
+        def __init__(self, emb, labels, idx):
+            self.embeddings, self.labels = emb[idx], labels[idx]
+        def __len__(self):        return len(self.labels)
+        def __getitem__(self, i): return self.embeddings[i], self.labels[i]
+
+    def __init__(self, text_dataset, embedder, embedding_method, cache_dir=r"Data\cache"):
         """
         Creates the Dataset instance which fits the classification task.
         Most recurrent parameters are used to initiate the TextDataset in the init.
         Args:
-            data_path (str): The path to the .csv data file.
-            subset (str): Choose between TRAIN or TEST, one for embedding finetune and optimization and one for testing.
-            id_column_idx (int): Idx for the ID column in the dataframe.
-            comment_column_idx (int): Idx for the text column in the dataframe.
-            label_column_idx (int): Idx for the label column in the dataframe.
-            subset_column_idx (int): Idx for the subset column in the dataframe, indicating how to split it.
-            augmented_classes (list): A list of the classes to augment. Chose from ['Pro-Israel', 'Pro-Palestine', 'Undefined']
-            augmentation_ratio (int): Increase in the comments number. Meaning -> 1 comments turns to 1 + AUGMENTATION_RATIO comments.
-            augmentation_methods (list): Choose from ['deletion', 'swap', 'wordnet'].
-            adversation_ratio (float): Replacement ratio within the comment.
-            undersampling_targets (dict): A mapping object of how much to undersample each class.
+            text_dataset (TextDataset): A pre-computed TextDataset instance
             embedder (Embedder): Embedder instance for generating embeddings.
             embedding_method (str): Method for embedding generation (e.g., 'distilbert', 'tf-idf').
+            cache_dir (str): Directory to save the pre-computed embeddings instead of re-calculate.
         """
-        self.text_dataset = TextDataset(
-                            data_path=data_path,
-                            subset=subset,
-                            id_column_idx=id_column_idx,
-                            comment_column_idx=comment_column_idx,
-                            label_column_idx=label_column_idx,
-                            subset_column_idx=subset_column_idx,
-                            augmented_classes=augmented_classes,
-                            augmentation_ratio=augmentation_ratio,
-                            augmentation_methods=augmentation_methods,
-                            adversation_ratio = adversation_ratio,
-                            undersampling_targets=undersampling_targets
-                            )
-        self.comment_ids = [row[id_column_idx] for row in self.text_dataset]
-        self.embedder = embedder
-        self.embedding_method = embedding_method
-        self.subset = subset
-        self.data_dir = os.path.dirname(data_path)
-        # Ensure the data directory exists
-        os.makedirs(self.data_dir, exist_ok=True)
+        # ---- load CSV once -------------------------------------------------
+        self.text_dataset = text_dataset
+        self.embedder, self.embedding_method = embedder, embedding_method
+        cache_dir = Path(cache_dir); cache_dir.mkdir(exist_ok=True)
+        self.action = self.text_dataset.action
+        self.cache_file = cache_dir / f"{embedding_method}_embeddings_{self.action}.pkl"
 
-        # File path for the precomputed embeddings
-        action = 'undersampled' if undersampling_targets else f'augmentation={augmentation_ratio}'
-        self.cache_file = os.path.join(self.data_dir, f"subset {subset}_{action}_embeddings_{embedding_method}.pkl")
-
-        # Load or generate embeddings
-        if os.path.exists(self.cache_file):
+        if self.cache_file.exists():
             print(f"[EmbeddingDataset]: Loading precomputed embeddings from {self.cache_file}...")
             with open(self.cache_file, "rb") as f:
-                data = pickle.load(f)
-            self.embeddings = data["embeddings"]
-            self.labels = data["labels"]
+                blob = pickle.load(f)
+            self.embeddings = blob["embeddings"]          # (N,D) torch tensor
+            self.labels = blob["labels"]           # (N,)  torch tensor
         else:
             print(f"[EmbeddingDataset]: Precomputing embeddings and saving to {self.cache_file}...")
-            self.embeddings, self.labels = self.__precompute_embeddings()
-            print("[EmbeddingDataset Status]: Embedding generation complete.")
+            self.embeddings, self.labels = self._build_and_cache()
+        print("[EmbeddingDataset Status]: Embedding generation complete.")
 
-    def __precompute_embeddings(self):
-        """
-        Generate embeddings and save them to a pickle file for future use.
-        """
-        embeddings = []
-        labels = []
-
-        for _, (comment_id, comment, label) in tqdm(
-            enumerate(self.text_dataset),
-            total=len(self.text_dataset),
-            desc=f"Generating embeddings for {self.subset} dataset"
-        ):
-            embedding = self.embedder.embed(comment, method=self.embedding_method)
-            # Convert embedding to a PyTorch tensor if it's a numpy array or other type
-            if isinstance(embedding, np.ndarray):
-                embedding = torch.tensor(embedding, dtype=torch.float32)
-            embeddings.append(embedding)
-            labels.append(label)
-
-        embeddings = torch.stack(embeddings)  # Stack embeddings into a single tensor
-        labels = torch.tensor(labels, dtype=torch.long)
-
-        # Save to pickle
+    
+    def _build_and_cache(self):
+        emb, lab = [], []
+        for txt in tqdm(self.text_dataset.data.iloc[:, self.text_dataset.comment_column_idx],
+                        total=len(self.text_dataset.data), desc="Embedding Comments"):
+            v = self.embedder.embed(txt, method=self.embedding_method)
+            emb.append(torch.as_tensor(v, dtype=torch.float32))
+        emb = torch.stack(emb)
+        lab = torch.tensor(
+            self.text_dataset.data.iloc[:, self.text_dataset.label_column_idx]
+                .map(LABELS_ENCODER).to_numpy(),
+            dtype=torch.long)
         with open(self.cache_file, "wb") as f:
-            pickle.dump({"embeddings": embeddings, "labels": labels}, f)
-
-        return embeddings, labels
-
+            pickle.dump({"embeddings": emb, "labels": lab}, f)
+        return emb, lab
+    # --------------------- Public Methods ---------------------------------
+    def get_subset(self, split: str) -> Dataset:
+        """
+        Get a desired split fromt the Dataset -> TRAIN, VAL or TEST.
+        """
+        idx = self.text_dataset.idx_split[split]
+        return self._View(self.embeddings, self.labels, idx)
+    
+    # --------------------- Dataset API ---------------------------------
     def __len__(self):
         return len(self.text_dataset)  # Length is based on the original TextDataset
 
@@ -331,18 +389,29 @@ class EmbeddingDataset(Dataset):
         """
         return self.embeddings[idx], self.labels[idx]
         
-    
+def _to_numpy(t):
+    """
+    Helper:  tensor  ➜  numpy (always on CPU, detached).
+    Accepts torch.Tensor or anything that is already a numpy array.
+    """
+    if isinstance(t, torch.Tensor):
+        return t.detach().cpu().numpy()
+    return np.asarray(t)
+   
 def get_dataloader(dataset, batch_size=32, shuffle=True, num_workers=2):
     '''
     Will create the DataLoader object.
     Assumption is that a Dataset object is passed. Function will response if the dataset is TextDataset or EmbeddingDataset.
     If EmbeddingDataset, this function will return a Dataloader and a (X, y) tuple for other scikit models.
     Else, if dataset is TextDataset it will return a text dataset for it, which is designed for analysis of Transformer model's feed.
+    The function is GPU‑safe:   `.cpu()` before `.numpy()`.
+
     Args:
         dataset (TextDataset or EmbeddingDataset): The original dataset object.
         batch_size (int): Number of samples per batch.
         shuffle (bool): Whether to shuffle the dataset.
         num_workers (int): Number of subprocesses for data loading.
+    
     Returns:
         if type(dataset) == 'TextDataset':
             DataLoader: A PyTorch DataLoader object for text output.
@@ -350,37 +419,38 @@ def get_dataloader(dataset, batch_size=32, shuffle=True, num_workers=2):
             1. DataLoader: A PyTorch DataLoader object for embedding output.
             2. tuple: An (X, y) tuple for other scikit models.
     '''
-    print(f'[Dataloader Status]: Loading the dataset...')
+    print(f'[Dataloader Status]: Preparing the dataloader...')
+    pin = torch.cuda.is_available()          # use pinned memory when GPU present
+    dl = DataLoader(dataset,
+                    batch_size=batch_size,
+                    shuffle=shuffle,
+                    num_workers=num_workers,
+                    pin_memory=pin)
     
-    if type(dataset) == TextDataset:
-        # For text-based loading, directly return a DataLoader using the raw dataset
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-        print(f'[Dataloader Status]: Done.')
-        return dataloader
+    # --- TextDataset: nothing else to do ---------------------------------
+    if 'TextDataset' in dataset.__class__.__name__:
+        return dl
 
-    elif type(dataset) == EmbeddingDataset:        
-        # Prep the output
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-        for batch_idx, (X_batch, y_batch) in enumerate(dataloader):
-            if batch_idx == 0:  # Only check the first batch
-                y_batch_np = y_batch.numpy()  # Convert to numpy for comparison
-                print(f'[Batch {batch_idx}] Glimpse of labels: {y_batch_np[:5]} (Batch size: {len(y_batch_np)})')
-                break
-        
-        # Use precomputed embeddings and labels directly from the EmbeddingDataset
-        X = dataset.embeddings.numpy()  # Already precomputed in EmbeddingDataset
-        y = dataset.labels.numpy()      # Already precomputed in EmbeddingDataset
-        print('[Dataloader Status]: Done. Glimpse of true labels: ', y[:5], 'Length: ', len(y))
-        return dataloader, (X, y)
-    else:
-        raise ValueError(f"Unsupported Dataset type: {type(dataset)}. Pass TextDataset or EmbeddingDataset.")
+    # -------- EmbeddingDataset or its _View -------------------------------------
+    if isinstance(dataset, EmbeddingDataset) or isinstance(dataset, EmbeddingDataset._View):
+        # quick peek at first batch
+        for b, (_, y_b) in enumerate(dl):
+            print(f"[DL] peek batch {b}: y[:5] =", _to_numpy(y_b)[:5])
+            break
+
+        X = _to_numpy(dataset.embeddings)
+        y = _to_numpy(dataset.labels)
+        print(f"[DL] EmbeddingDataset ready. X shape {X.shape}, y len {len(y)}")
+        return dl, (X, y)
+
+    # -------- unknown dataset ---------------------------------------------------
+    raise ValueError(f"[DL] Unrecognized dataset type: {type(dataset)}")
     
     
 if __name__ == "__main__":
     # Initialize Dataset
-    dataset = TextDataset(
-        data_path=DATA_PATH,
-        subset=SUBSET,
+    text_dataset = TextDataset(
+        csv_path=DATA_PATH,
         id_column_idx=ID_COLUMN_IDX,
         comment_column_idx=COMMENT_COLUMN_IDX,
         label_column_idx=LABEL_COLUMN_IDX,
@@ -394,22 +464,14 @@ if __name__ == "__main__":
 
     
     # Save dataset to CSV for inspection
-    dataset.save_to_csv('augmented_dataset_tmp.csv')
+    text_dataset.save_to_csv()
     
     # Create Embedding Dataset
-    embedding_dataset = EmbeddingDataset(data_path=DATA_PATH,
-                                        subset=SUBSET,
-                                        id_column_idx=ID_COLUMN_IDX,
-                                        comment_column_idx=COMMENT_COLUMN_IDX,
-                                        label_column_idx=LABEL_COLUMN_IDX,
-                                        subset_column_idx=SUBSET_COLUMN_IDX,
-                                        augmented_classes=AUGMENTED_CLASSES,
-                                        augmentation_ratio=AUGMENTATION_RATIO,
-                                        augmentation_methods=AUGMENTATION_METHODS,
-                                        adversation_ratio = ADVERSATION_RATIO,
-                                        undersampling_targets=UNDERSAMPLING_TARGETS,
+    embedding_dataset = EmbeddingDataset(text_dataset=text_dataset,
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
+    
+    train_ds = embedding_dataset.get_subset('TRAIN')   # returns EmbeddingDataset._View
     
     # Get the DataLoader with embeddings
     # Note the multiple objects outputted here

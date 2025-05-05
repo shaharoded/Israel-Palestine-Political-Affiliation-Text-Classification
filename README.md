@@ -32,6 +32,7 @@ The `llm_tagger.py` module provides functionality to generate labels for an unta
   - Processes the entire untagged dataset (`FULL_DATA_PATH`) using the OpenAI batch API.
   - Outputs a fully labeled dataset in `OUTPUT_FILE_PATH`.
   - Used to prepare training data for ML/DL models.
+  - The function `AITagger.run_pipeline` also have an input `method` that can be 'regular' or 'batch'. This addition is meant to use regular API or batch API on choice, given that the batch is ~50% cheaper but can take 24h per batch.
 
 The automated tagger reached `F1 Score = 0.88` on the manually tagged subset (~1050 comments).
 

@@ -79,5 +79,5 @@ BATCH_ROW_FORMAT = {
     }
 }
 
-TEST_BATCH_SIZE = 37000    # Number of comments for a single test of the model
+TEST_BATCH_SIZE = 1000    # Number of comments for a single test of the model
 TEST_MODE = True    # Will shrink the batch size, use the manually_tagged_data and calculate accuracy

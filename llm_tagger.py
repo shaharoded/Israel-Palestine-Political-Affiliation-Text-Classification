@@ -167,7 +167,55 @@ class AITagger:
             print(f"[Test Mode]: Mismatched predictions saved to {output_csv_file_path}")
 
         return accuracy, f1
+    
+    def __process_dataset(self, untagged_file_path, output_csv_file_path):
+        """
+        Tag every comment in `untagged_file_path` and stream the results
+        to `output_csv_file_path` in 500‑row chunks.
+        """
+        print("[Status]: Tagging the comments using the regular (non‑batch) API.")
 
+        # --- 1️⃣  Read the un‑tagged data -------------------------------------------------
+        with open(untagged_file_path, newline="", encoding="utf‑8", errors="ignore") as fh:
+            reader  = csv.reader(fh)
+            header  = next(reader)                                    # skip CSV header
+            raw_rows = [(row[self.id_column_idx].strip(),
+                        row[self.comment_column_idx].strip())
+                        for row in reader]
+
+        # --- 2️⃣  Helper that APPENDS a chunk to the CSV ---------------------------------
+        def _flush_chunk(chunk):
+            """Append <chunk> (list[dict]) to <output_csv_file_path>."""
+            df = pd.DataFrame(chunk)
+            file_exists = os.path.isfile(output_csv_file_path)
+            df.to_csv(
+                output_csv_file_path,
+                mode    = "a" if file_exists else "w",   # append if the file is already there
+                header  = not file_exists,               # write header only once
+                index   = False
+            )
+
+        # --- 3️⃣  Generate predictions and stream to disk --------------------------------
+        chunk, CHUNK_SIZE = [], 500
+        for i, (comment_id, comment) in enumerate(raw_rows, start=1):
+            chunk.append(
+                {
+                    "comment_id":      comment_id,
+                    "comment":         comment,
+                    "predicted_label": self.__generate_response(comment)
+                }
+            )
+
+            if i % CHUNK_SIZE == 0:
+                print(f"[Status]:   {i} rows processed – saving checkpoint…")
+                _flush_chunk(chunk)
+                chunk.clear()              # free memory
+
+        # --- 4️⃣  Flush whatever is left --------------------------------------------------
+        if chunk:
+            _flush_chunk(chunk)
+
+        print("[Status]: Job finished!")
 
     def __upload_batch_file(self, batch_file_path):
         """
@@ -389,7 +437,7 @@ class AITagger:
         print("[Job Status]: Completed processing all batches.")
 
 
-    def run_pipeline(self, input_file_path, batch_file_path, output_csv_file_path, test_mode=True):
+    def run_pipeline(self, input_file_path, batch_file_path, output_csv_file_path, test_mode=True, method='batch'):
         """
         Run the complete tagging pipeline with mini-batch processing.
 
@@ -397,13 +445,19 @@ class AITagger:
             input_file_path (str): Path to the CSV file (tagged/untagged comments).
             output_csv_file_path (str): Path to save the final combined output.
             test_mode (bool): If True, runs only the test mode.
+            method (str): How to get the responses from OpenAI - Choose from ['batch', 'regular']. 
+                            Batch is cheaper but might take a lot of time. Only applicable when test_mode=False.
         """
         if test_mode:
             print("[Test Mode]: Attempting model on small sample batch")
             self.__test_model(input_file_path, output_csv_file_path)
         else:
-            print("[Pipeline Start]: Processing mini-batches")
-            self.__batch_process_dataset(input_file_path, batch_file_path, output_csv_file_path)
+            if method == 'batch':
+                print("[Batch Pipeline Start]: Processing mini-batches")
+                self.__batch_process_dataset(input_file_path, batch_file_path, output_csv_file_path)
+            else: # method == 'regular'
+                print("[Regular Pipeline Start]: Processing comments")
+                self.__process_dataset(input_file_path, output_csv_file_path)
 
 
     def debug_batch_failure(self, batch_job_id):
@@ -445,6 +499,7 @@ if __name__ == "__main__":
     tagger.run_pipeline(input_file_path=input_file_path, 
                         batch_file_path=batch_file_path,
                         output_csv_file_path=output_file_path, 
-                        test_mode=TEST_MODE)  
+                        test_mode=TEST_MODE,
+                        method='regular')  
         
         

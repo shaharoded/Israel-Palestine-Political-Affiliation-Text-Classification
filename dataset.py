@@ -7,6 +7,7 @@ import random
 import re
 import contractions
 import nltk
+nltk.download('stopwords')
 from nltk.corpus import wordnet, stopwords
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -454,12 +455,12 @@ if __name__ == "__main__":
         id_column_idx=ID_COLUMN_IDX,
         comment_column_idx=COMMENT_COLUMN_IDX,
         label_column_idx=LABEL_COLUMN_IDX,
-        subset_column_idx=SUBSET_COLUMN_IDX,
-        augmented_classes=AUGMENTED_CLASSES,
-        augmentation_ratio=AUGMENTATION_RATIO,
-        augmentation_methods=AUGMENTATION_METHODS,
-        adversation_ratio = ADVERSATION_RATIO,
-        undersampling_targets=UNDERSAMPLING_TARGETS
+        split_column_idx=SUBSET_COLUMN_IDX,
+        augmented_classes=[],
+        augmentation_ratio=0,
+        augmentation_methods=[],
+        adversation_ratio = 0,
+        undersampling_targets={}
     )
 
     

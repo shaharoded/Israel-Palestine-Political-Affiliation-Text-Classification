@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from torch.nn.functional import normalize
 from transformers import DistilBertTokenizer, DistilBertModel
 import joblib
 import warnings
@@ -10,7 +9,7 @@ warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 import nltk
 from nltk.tokenize import sent_tokenize
-nltk.download('punkt')
+nltk.download('punkt', quiet=True)
 
 # Local Code
 from Config.dataset_config import *

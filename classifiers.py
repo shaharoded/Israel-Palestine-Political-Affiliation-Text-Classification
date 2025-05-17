@@ -15,7 +15,7 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score
 # Local Code
 from Config.classifiers_config import *
 from Config.dataset_config import *
-from dataset import EmbeddingDataset, get_dataloader
+from dataset import TextDataset, EmbeddingDataset, get_dataloader
 from embedder import Embedder
 
 # Setting random seeds for reproducibility
@@ -159,7 +159,7 @@ def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
     Returns:
         tuple: (F1 (float), classification_report)
     '''
-    test_dataloader, (X_test, true_labels) = test_data_package
+    _, (_, true_labels) = test_data_package
     print('[Debug] Glimpse of true labels:', true_labels[:10], 'Length:', len(true_labels))
     
     # Print confusion matrix (truth table)
@@ -185,49 +185,36 @@ def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
 if __name__ == "__main__":
     print(f'[Testing Status]: Building datasets and dataloaders...')
     print(f'[Testing Status]: Building train dataloader...')
+    
     # Create Embedding Dataset
-    train_dataset = EmbeddingDataset(data_path=DATA_PATH,
-                                        subset='TRAIN',
-                                        id_column_idx=ID_COLUMN_IDX,
-                                        comment_column_idx=COMMENT_COLUMN_IDX,
-                                        label_column_idx=LABEL_COLUMN_IDX,
-                                        subset_column_idx=SUBSET_COLUMN_IDX,
-                                        augmented_classes=AUGMENTED_CLASSES,
-                                        augmentation_ratio=AUGMENTATION_RATIO,
-                                        augmentation_methods=AUGMENTATION_METHODS,
-                                        adversation_ratio = ADVERSATION_RATIO,
-                                        undersampling_targets={},
+    text_dataset = TextDataset(
+    csv_path          = DATA_PATH,
+    id_column_idx     = ID_COLUMN_IDX,
+    comment_column_idx= COMMENT_COLUMN_IDX,
+    label_column_idx  = LABEL_COLUMN_IDX,
+    split_column_idx  = SUBSET_COLUMN_IDX,  # TRAIN / VAL / TEST column
+    augmented_classes = [],                 # ‑‑ no aug
+    augmentation_ratio= 0,
+    undersampling_targets = {},             # ‑‑ no undersampling
+    )
+    embedding_dataset = EmbeddingDataset(text_dataset=text_dataset,
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
     
+    train_ds = embedding_dataset.get_subset('TRAIN')   # returns EmbeddingDataset._View
+    test_ds = embedding_dataset.get_subset('TEST')   # returns EmbeddingDataset._View
+    
     # Get the DataLoader with embeddings
     # Note the multiple objects outputted here
-    train_data_package = get_dataloader(train_dataset,  
+    train_data_package = get_dataloader(train_ds,  
                                 batch_size=BATCH_SIZE,
                                 shuffle=False, 
                                 num_workers=2)
     
-    print(f'[Testing Status]: Building test dataloader...')
-    test_dataset = EmbeddingDataset(data_path=DATA_PATH,
-                                        subset='TEST',
-                                        id_column_idx=ID_COLUMN_IDX,
-                                        comment_column_idx=COMMENT_COLUMN_IDX,
-                                        label_column_idx=LABEL_COLUMN_IDX,
-                                        subset_column_idx=SUBSET_COLUMN_IDX,
-                                        augmented_classes=[],
-                                        augmentation_ratio=0,
-                                        augmentation_methods=[],
-                                        adversation_ratio = 0,
-                                        undersampling_targets={},
-                                        embedder=Embedder(), 
-                                        embedding_method=EMBEDDING_METHOD)
-    
-    # Get the DataLoader with embeddings
-    # Note the multiple objects outputted here
-    test_data_package = get_dataloader(test_dataset,  
-                                batch_size=BATCH_SIZE,
-                                shuffle=False, 
-                                num_workers=2)
+    test_data_package = get_dataloader(test_ds,  
+                            batch_size=BATCH_SIZE,
+                            shuffle=False, 
+                            num_workers=2)
     
     # Choose a model
     print(f'[Testing Status]: Fitting a classifier...')
@@ -236,16 +223,16 @@ if __name__ == "__main__":
     # Initialize and train the model
     classifier = Classifier(model_config, 
                             model_type=MODEL_TYPE,
-                            log=False)
+                            log=True)
     classifier.fit(train_data_package)
 
     # Test the model
     print(f'[Testing Status]: Testing on test subset...')
     predictions = classifier.predict(test_data_package)
     
-        # Extract comment IDs and real labels from the test dataset
-    test_comment_ids = test_dataset.comment_ids  # Assuming it's stored as an attribute
-    real_labels = test_dataset.labels.numpy()    # Convert to numpy if stored as a tensor
+    # Extract comment IDs and real labels from the test dataset
+    test_comment_ids = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.id_column_idx].tolist()
+    real_labels = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.label_column_idx].map(LABELS_ENCODER).to_numpy()
     
     # Create a DataFrame for predictions
     results_df = pd.DataFrame({
@@ -254,10 +241,10 @@ if __name__ == "__main__":
         "Predicted Label": predictions
     })
 
-    # Save the DataFrame to a CSV file
-    results_csv_path = "classification_results.csv"
-    results_df.to_csv(results_csv_path, index=False)
-    print(f"Results saved to {results_csv_path}")
+    # # Save the DataFrame to a CSV file
+    # results_csv_path = "classification_results.csv"
+    # results_df.to_csv(results_csv_path, index=False)
+    # print(f"Results saved to {results_csv_path}")
 
     # Show accuracy score per class + macro (classification report)
     # Calculate accuracy and show classification report

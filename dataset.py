@@ -6,18 +6,18 @@ from pathlib import Path
 import random
 import re
 import contractions
-import nltk
-nltk.download('stopwords')
-from nltk.corpus import wordnet, stopwords
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+import nltk
+from nltk import pos_tag
+from nltk.tokenize import word_tokenize
+from nltk.corpus import wordnet, stopwords
 STOPWORDS = set(stopwords.words('english'))
 
 # Local Code
 from Config.dataset_config import *
 from embedder import *
-
 
 # ----------------------------------------------------------------------
 # 0.  Tiny CSV cache (load once, reuse for every split)
@@ -52,14 +52,14 @@ class TextAugmenter:
         '''
         Randomally delete words from the sentence
         '''
-        words = nltk.word_tokenize(sentence)
+        words = word_tokenize(sentence)
         return " ".join([word for word in words if random.random() > self.adversation_ratio])
     
     def random_swap(self, sentence):
         '''
         Randomally swap 2 words of the sentence
         '''
-        words = nltk.word_tokenize(sentence)
+        words = word_tokenize(sentence)
         for _ in range(int(len(words) * self.adversation_ratio)):
             idx1, idx2 = random.sample(range(len(words)), 2)
             words[idx1], words[idx2] = words[idx2], words[idx1]
@@ -95,8 +95,8 @@ class TextAugmenter:
         '''
         Randomally replace a word with a synonim
         '''
-        words = nltk.word_tokenize(sentence)
-        pos_tags = nltk.pos_tag(words)
+        words = word_tokenize(sentence)
+        pos_tags = pos_tag(words)
         augmented_words = []
         for word, pos in pos_tags:
             if word.lower() in STOPWORDS:
@@ -449,6 +449,9 @@ def get_dataloader(dataset, batch_size=32, shuffle=True, num_workers=2):
     
     
 if __name__ == "__main__":
+    nltk.download('punkt')
+    nltk.download('stopwords')
+    
     # Initialize Dataset
     text_dataset = TextDataset(
         csv_path=DATA_PATH,

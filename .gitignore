@@ -8,5 +8,6 @@ Preprocessed_Dataset.csv
 # Ignore an entire folder
 Data/
 Embedding/
+Checkpoint/
 venv/
 __pycache__/

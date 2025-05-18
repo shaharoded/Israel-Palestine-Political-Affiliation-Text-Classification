@@ -11,6 +11,7 @@ import torch.optim as optim
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
+import pickle
 
 # Local Code
 from Config.classifiers_config import *
@@ -55,7 +56,7 @@ class DNN(nn.Module):
         # Final classification layer
         num_classes = config["layers"][-1]
         layers.append(nn.Linear(input_size, num_classes))  # Last layer matches num_classes
-        layers.append(nn.Softmax(dim=1))  # Softmax activation for multi-class output
+        # layers.append(nn.Softmax(dim=1))  # Softmax activation for multi-class output
 
         self.model = nn.Sequential(*layers)
         self.learning_rate = config["learning_rate"]
@@ -94,12 +95,28 @@ class Classifier:
     def fit(self, train_data_package):
         """
         Fits the model to the training data.
+        Allows to load an existing model, if training already reached a best saved model.
         Works with the output of the function get_dataloader which gets the desired datashape
         per model.
 
         Args:
             train_data_package (tuple): A tuple containing (DataLoader, (X, y))
         """
+        # ----------------- Determine checkpoint path -----------------
+        checkpoint_path = os.path.join(CHECKPOINTS, f'best_{self.model_type}.pt' if self.model_type in ["logistic_regression", "dnn"] else f'best_{self.model_type}.pkl')
+        if os.path.exists(checkpoint_path):
+            self.log and print(f"[Model Fit Status]: Loading pre-trained {self.model_type} from checkpoint.")
+            
+            if self.model_type in ["logistic_regression", "dnn"]:
+                self.model.load_state_dict(torch.load(checkpoint_path, map_location=DEVICE))
+                self.model.to(DEVICE)
+                self.model.eval()
+            else:  # sklearn/xgboost
+                with open(checkpoint_path, "rb") as f:
+                    self.model = pickle.load(f)
+            return
+
+        # ----------------- Otherwise, train the model -----------------
         train_dataloader, (X_train, y_train) = train_data_package
         if self.model_type in ["svm", "xgboost"]:
             self.log and print(f'[Model Fit Status]: Fitting the model...')
@@ -117,7 +134,7 @@ class Classifier:
                 self.log and print(f"Epoch {epoch + 1}: Training Loss = {loss.item()}")
 
 
-    def predict(self, test_data_package, return_df=False):
+    def predict(self, test_data_package):
         """
         Predicts labels for the given test data.
         Works with the output of the function get_dataloader which gets the desired datashape
@@ -125,12 +142,12 @@ class Classifier:
 
         Args:
             test_data_package (tuple): A tuple containing (DataLoader, (X, y))
-            return_df (bool): Will return the predictions as a df, allowing for easier analysis.
+        
         Returns:
             list: Predicted labels.
         """
         predictions = []
-        test_dataloader, (X_test, y_test) = test_data_package
+        test_dataloader, (X_test, _) = test_data_package
         if self.model_type in ["svm", "xgboost"]:
             self.log and print(f'[Model Pred Status]: Generating predictions...')
             predictions = self.model.predict(X_test)
@@ -139,6 +156,7 @@ class Classifier:
             self.model.eval()
             with torch.no_grad():
                 for _, (features, _) in enumerate(test_dataloader):
+                    features = features.to(DEVICE)
                     outputs = self.model(features.float())  # outputs.shape should be (batch_size, 3)
                     _, predictions_batch = torch.max(outputs, 1)  # Get the index of the max probability for each sample
                     predictions.extend(predictions_batch.int().tolist())  # Append predictions
@@ -160,6 +178,7 @@ def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
         tuple: (F1 (float), classification_report)
     '''
     _, (_, true_labels) = test_data_package
+    true_labels = true_labels.cpu().numpy().astype(int) if isinstance(true_labels, torch.Tensor) else np.array(true_labels).astype(int)
     print('[Debug] Glimpse of true labels:', true_labels[:10], 'Length:', len(true_labels))
     
     # Print confusion matrix (truth table)
@@ -178,7 +197,6 @@ def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
     class_report = classification_report(true_labels, predictions, zero_division=0)
     print("\nClassification Report:")
     print(class_report)
-    
     return f1_micro, class_report
 
     
@@ -230,16 +248,16 @@ if __name__ == "__main__":
     print(f'[Testing Status]: Testing on test subset...')
     predictions = classifier.predict(test_data_package)
     
-    # Extract comment IDs and real labels from the test dataset
-    test_comment_ids = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.id_column_idx].tolist()
-    real_labels = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.label_column_idx].map(LABELS_ENCODER).to_numpy()
+    # # Extract comment IDs and real labels from the test dataset
+    # test_comment_ids = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.id_column_idx].tolist()
+    # real_labels = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.label_column_idx].to_numpy()
     
-    # Create a DataFrame for predictions
-    results_df = pd.DataFrame({
-        "Comment ID": test_comment_ids,
-        "Real Label": real_labels,
-        "Predicted Label": predictions
-    })
+    # # Create a DataFrame for predictions
+    # results_df = pd.DataFrame({
+    #     "Comment ID": test_comment_ids,
+    #     "Real Label": real_labels,
+    #     "Predicted Label": predictions
+    # })
 
     # # Save the DataFrame to a CSV file
     # results_csv_path = "classification_results.csv"
@@ -248,4 +266,4 @@ if __name__ == "__main__":
 
     # Show accuracy score per class + macro (classification report)
     # Calculate accuracy and show classification report
-    _, _ = assess_model(predictions, test_data_package)
+    _, _ = assess_model(predictions, test_data_package, valid_labels=[0, 1, 2])

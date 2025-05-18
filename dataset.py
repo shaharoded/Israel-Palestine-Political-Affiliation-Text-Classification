@@ -180,6 +180,24 @@ class TextDataset(Dataset):
             self.action = 'augmented'
 
         df.reset_index(drop=True, inplace=True)  # keep indices clean
+        
+        # Encode labels if not yet encoded
+        label_col = df.columns[self.label_column_idx]
+        
+        # Handle string labels: map to integers via LABELS_ENCODER
+        if df[label_col].dtype == object:
+            mapped = df[label_col].map(LABELS_ENCODER)
+            unknowns = df[~df[label_col].isin(LABELS_ENCODER)]
+            if not unknowns.empty:
+                raise ValueError(f"[Label Error] Found unknown string labels: {unknowns[label_col].unique().tolist()}")
+            df[label_col] = mapped
+        # Handle numeric labels: check that they’re valid
+        else:
+            invalid_labels = df.loc[~df[label_col].isin(LABELS_ENCODER.values()), label_col].unique()
+            if len(invalid_labels) > 0:
+                raise ValueError(f"[Label Error] Found invalid numeric labels: {invalid_labels}")
+        
+        # Save df as class attr
         self.data = df
 
         # pre‑compute row indices per split for fast lookup
@@ -366,8 +384,7 @@ class EmbeddingDataset(Dataset):
             emb.append(torch.as_tensor(v, dtype=torch.float32))
         emb = torch.stack(emb)
         lab = torch.tensor(
-            self.text_dataset.data.iloc[:, self.text_dataset.label_column_idx]
-                .map(LABELS_ENCODER).to_numpy(),
+            self.text_dataset.data.iloc[:, self.text_dataset.label_column_idx].to_numpy(),
             dtype=torch.long)
         with open(self.cache_file, "wb") as f:
             pickle.dump({"embeddings": emb, "labels": lab}, f)
@@ -446,6 +463,38 @@ def get_dataloader(dataset, batch_size=32, shuffle=True, num_workers=2):
 
     # -------- unknown dataset ---------------------------------------------------
     raise ValueError(f"[DL] Unrecognized dataset type: {type(dataset)}")
+
+def patch_cached_labels(pkl_path):
+    '''
+    Had a reccurring problem with the datasets so added this utility to fix the label encodings 
+    of a cached dataset without having to re-calculate.
+
+    Use like:
+    patch_cached_labels("Data/cache/distilbert_embeddings_regular.pkl")
+    '''
+    with open(pkl_path, 'rb') as f:
+        blob = pickle.load(f)
+    
+    labels = blob["labels"]
+    if not torch.is_tensor(labels):
+        labels = torch.tensor(labels, dtype=torch.long)
+
+    # Fix labels that are outside expected range
+    corrected_labels = []
+    for lbl in labels:
+        lbl_int = int(lbl)
+        if lbl_int in LABELS_ENCODER.values():
+            corrected_labels.append(lbl_int)
+        else:
+            print(f"[Warning] Skipping invalid label: {lbl_int}")
+            corrected_labels.append(-1)  # or raise error if strict
+
+    blob["labels"] = torch.tensor(corrected_labels, dtype=torch.long)
+
+    with open(pkl_path, 'wb') as f:
+        pickle.dump(blob, f)
+    
+    print(f"[Patch] Labels fixed and saved back to: {pkl_path}")
     
     
 if __name__ == "__main__":
@@ -465,7 +514,6 @@ if __name__ == "__main__":
         adversation_ratio = 0,
         undersampling_targets={}
     )
-
     
     # Save dataset to CSV for inspection
     text_dataset.save_to_csv()
@@ -474,6 +522,12 @@ if __name__ == "__main__":
     embedding_dataset = EmbeddingDataset(text_dataset=text_dataset,
                                         embedder=Embedder(), 
                                         embedding_method=EMBEDDING_METHOD)
+    
+    # ----- Sanity check: Glimpse of LABELS (post-embedding) -----
+    for split in ['TRAIN', 'VAL', 'TEST']:
+        view = embedding_dataset.get_subset(split)
+        labels = [int(view[i][1]) for i in range(min(10, len(view)))]
+        print(f"[Embedding Labels - {split}]:", labels)
     
     train_ds = embedding_dataset.get_subset('TRAIN')   # returns EmbeddingDataset._View
     

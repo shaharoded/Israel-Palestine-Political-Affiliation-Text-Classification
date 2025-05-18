@@ -1,6 +1,13 @@
 # Classifier __init__ configurations
 
-MODEL_TYPE = 'dnn'  # Choose from [dnn, logistic_regression, svm, xgboost]
+# Get the project root directory (move up one level from the 'Config' folder)
+import os
+import torch
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHECKPOINTS = os.path.join(project_root, 'Checkpoint')
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+MODEL_TYPE = 'xgboost'  # Choose from [dnn, logistic_regression, svm, xgboost]
 MODEL_CONFIG = {
     "logistic_regression": {
         "num_epochs": 20,
@@ -30,11 +37,11 @@ MODEL_CONFIG = {
         'grow_policy': 'depthwise'
     },
     "dnn": {
-        'num_epochs': 16, 
-        'learning_rate': 0.00014610022118293262, 
-        'weight_decay': 0.0001396624345530416, 
+        'num_epochs': 30, 
+        'learning_rate': 3e-4, 
+        'weight_decay': 1e-4, 
         'batch_norm': True, 
-        'drop_out': 0.30471334715503484, 
-        'layers': [768, 512, 128, 64, 3]
+        'drop_out': 0.3, 
+        'layers': [768, 512, 256, 128, 64, 3]
     }
 }

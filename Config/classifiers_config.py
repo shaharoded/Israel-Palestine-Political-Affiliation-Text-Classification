@@ -41,7 +41,7 @@ MODEL_CONFIG = {
         'learning_rate': 3e-4, 
         'weight_decay': 1e-4, 
         'batch_norm': True, 
-        'drop_out': 0.3, 
-        'layers': [768, 512, 256, 128, 64, 3]
+        'drop_out': 0.2, 
+        'layers': [768, 256, 3]
     }
 }

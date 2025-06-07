@@ -392,9 +392,28 @@ class EmbeddingDataset(Dataset):
     # --------------------- Public Methods ---------------------------------
     def get_subset(self, split: str) -> Dataset:
         """
-        Get a desired split fromt the Dataset -> TRAIN, VAL or TEST.
+        Get a desired split from the Dataset -> TRAIN, VAL, TEST or any combination using '+'.
+        
+        Example:
+            get_subset("TRAIN") → standard
+            get_subset("TRAIN+VAL") → merged dataset
+            get_subset("TRAIN+VAL+TEST") → full dataset
         """
-        idx = self.text_dataset.idx_split[split]
+        if "+" in split:
+            splits = list(set(split.split("+")))
+            all_idx = []
+            for sub in splits:
+                sub = sub.strip().upper()
+                if sub not in self.text_dataset.idx_split:
+                    raise ValueError(f"[Split Error] Unknown split name: {sub}")
+                all_idx.append(self.text_dataset.idx_split[sub])
+            idx = np.concatenate(all_idx)
+        else:
+            split = split.strip().upper()
+            if split not in self.text_dataset.idx_split:
+                raise ValueError(f"[Split Error] Unknown split name: {split}")
+            idx = self.text_dataset.idx_split[split]
+
         return self._View(self.embeddings, self.labels, idx)
     
     # --------------------- Dataset API ---------------------------------

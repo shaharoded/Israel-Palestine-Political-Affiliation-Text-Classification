@@ -14,6 +14,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 import pickle
+from tqdm import tqdm
 
 # Local Code
 from Config.classifiers_config import *
@@ -150,6 +151,22 @@ class Classifier:
                 self.log and print(f"Epoch {epoch + 1}: Training Loss = {loss.item()}")
 
 
+    def _batch_predict_sklearn(self, X, batch_size=1024, proba=False):
+        preds, probs = [], []
+        for i in tqdm(range(0, len(X), batch_size), desc="Predicting", ncols=100):
+            X_batch = X[i:i+batch_size]
+            if proba and hasattr(self.model, "predict_proba"):
+                batch_probs = self.model.predict_proba(X_batch)
+                probs.append(batch_probs)
+                preds.append(batch_probs.argmax(axis=1))
+            else:
+                preds.append(self.model.predict(X_batch))
+        predictions = np.concatenate(preds)
+        if proba and probs:
+            probas = np.concatenate(probs)
+            return predictions, probas
+        return predictions, None
+
     def predict(self, test_data_package, proba=False):
         """
         Predicts labels for the given test data. Optionally returns class probabilities.
@@ -169,28 +186,26 @@ class Classifier:
 
         if self.model_type in ["svm", "xgboost"]:
             self.log and print(f'[Model Pred Status]: Generating predictions...')
-            if proba and hasattr(self.model, "predict_proba"):
-                probas = self.model.predict_proba(X_test)
-                predictions = probas.argmax(axis=1)
-            else:
-                predictions = self.model.predict(X_test)
+            predictions, probas = self._batch_predict_sklearn(X_test, batch_size=1024, proba=proba)
+            return (predictions.tolist(), probas.tolist()) if proba else predictions.tolist()
 
         elif self.model_type in ["logistic_regression", "dnn"]:
             self.log and print(f'[Model Pred Status]: Generating predictions...')
+            predictions = []
+            probas = []
             self.model.eval()
             with torch.no_grad():
-                for _, (features, _) in enumerate(test_dataloader):
+                for _, (features, _) in enumerate(tqdm(test_dataloader, desc="Predicting", ncols=100)):
                     features = features.to(DEVICE)
                     outputs = self.model(features.float())  # shape: (batch_size, num_classes)
                     if proba:
-                        probs = torch.softmax(outputs, dim=1)  # shape: (batch_size, num_classes)
+                        probs = torch.softmax(outputs, dim=1)
                         probas.extend(probs.cpu().tolist())
                         preds = torch.argmax(probs, dim=1)
                     else:
                         preds = torch.argmax(outputs, dim=1)
                     predictions.extend(preds.cpu().tolist())
-
-        return (predictions, probas) if proba else predictions
+            return (predictions, probas) if proba else predictions
 
 
     def load(self, checkpoint_path=None):

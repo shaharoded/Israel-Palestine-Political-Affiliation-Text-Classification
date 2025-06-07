@@ -150,34 +150,47 @@ class Classifier:
                 self.log and print(f"Epoch {epoch + 1}: Training Loss = {loss.item()}")
 
 
-    def predict(self, test_data_package):
+    def predict(self, test_data_package, proba=False):
         """
-        Predicts labels for the given test data.
-        Works with the output of the function get_dataloader which gets the desired datashape
-        per model.
+        Predicts labels for the given test data. Optionally returns class probabilities.
 
         Args:
-            test_data_package (tuple): A tuple containing (DataLoader, (X, y))
-        
+            test_data_package (tuple): (DataLoader, (X, y))
+            proba (bool): If True, also return class probabilities.
+
         Returns:
-            list: Predicted labels.
+            list: Predicted labels
+            (optional) list: Predicted class probabilities
         """
         predictions = []
+        probas = []
+
         test_dataloader, (X_test, _) = test_data_package
+
         if self.model_type in ["svm", "xgboost"]:
             self.log and print(f'[Model Pred Status]: Generating predictions...')
-            predictions = self.model.predict(X_test)
+            if proba and hasattr(self.model, "predict_proba"):
+                probas = self.model.predict_proba(X_test)
+                predictions = probas.argmax(axis=1)
+            else:
+                predictions = self.model.predict(X_test)
+
         elif self.model_type in ["logistic_regression", "dnn"]:
             self.log and print(f'[Model Pred Status]: Generating predictions...')
             self.model.eval()
             with torch.no_grad():
                 for _, (features, _) in enumerate(test_dataloader):
                     features = features.to(DEVICE)
-                    outputs = self.model(features.float())  # outputs.shape should be (batch_size, 3)
-                    _, predictions_batch = torch.max(outputs, 1)  # Get the index of the max probability for each sample
-                    predictions.extend(predictions_batch.int().tolist())  # Append predictions
+                    outputs = self.model(features.float())  # shape: (batch_size, num_classes)
+                    if proba:
+                        probs = torch.softmax(outputs, dim=1)  # shape: (batch_size, num_classes)
+                        probas.extend(probs.cpu().tolist())
+                        preds = torch.argmax(probs, dim=1)
+                    else:
+                        preds = torch.argmax(outputs, dim=1)
+                    predictions.extend(preds.cpu().tolist())
 
-        return predictions
+        return (predictions, probas) if proba else predictions
 
 
     def load(self, checkpoint_path=None):

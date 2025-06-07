@@ -2,6 +2,7 @@
 Class to contain the different model, each should be easiliy called for initialization,
 fit and predict.
 '''
+import os
 import random
 import numpy as np
 import pandas as pd
@@ -64,8 +65,8 @@ class DNN(nn.Module):
     def forward(self, x):
         return self.model(x)
     
-class Classifier:
-    def __init__(self, config, model_type, log=True):
+class Classifier:   
+    def __init__(self, config, model_type, log=True, init_model=True):
         """
         Initializes the classifier based on the model type and configuration.
 
@@ -73,10 +74,15 @@ class Classifier:
             config (dict): Configuration for the model. Format varies based on the model type.
             model_type (str): One of "logistic_regression", "svm", "xgboost", or "dnn".
             log (bool): Print the loss progress? Redundent if epochs are optimized externally.
+            init_model (bool): Allows model initialization for loaded model. Called like clf.load() after init.
         """
         self.model_type = model_type
         self.model_params = config          # save for cloning
         self.log = log
+
+        if not init_model:
+            self.model = None
+            return
 
         if model_type in ["logistic_regression", "dnn"]:
             # A one layered logistic regression implementation using the DNN class
@@ -163,7 +169,29 @@ class Classifier:
 
         return predictions
 
-    
+
+    def load(self, checkpoint_path=None):
+        """
+        Loads a pre-trained model from disk.
+        Args:
+            checkpoint_path (str, optional): Path to checkpoint file. If None, uses default from config.
+        """
+        if checkpoint_path is None:
+            checkpoint_path = os.path.join(CHECKPOINTS, f'best_{self.model_type}.pt' if self.model_type in ["logistic_regression", "dnn"] else f'best_{self.model_type}.pkl')
+
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"[Load Error] No checkpoint found at: {checkpoint_path}")
+
+        if self.model_type in ["logistic_regression", "dnn"]:
+            self.model.load_state_dict(torch.load(checkpoint_path, map_location=DEVICE))
+            self.model.to(DEVICE)
+            self.model.eval()
+        else:
+            with open(checkpoint_path, "rb") as f:
+                self.model = pickle.load(f)
+
+        self.log and print(f"[Model Load Status]: Loaded pretrained {self.model_type} from {checkpoint_path}")
+
 # Function to calculate model's accuracy
 def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
     '''

@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.svm import SVC
+from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 import pickle
@@ -88,9 +89,10 @@ class Classifier:
             # A one layered logistic regression implementation using the DNN class
             self.model = DNN(config)
             self.optimizer = optim.Adam(self.model.parameters(), lr=config["learning_rate"], weight_decay=config["weight_decay"])
-            self.criterion = nn.CrossEntropyLoss()  # Cross-Entropy Loss for multiclass problem
+            self.criterion = None  # Will be created in fit() based on label distribution
             self.num_epochs = config["num_epochs"]
         elif model_type == "svm":
+            config.setdefault("class_weight", "balanced")  # Balance class weights
             self.model = SVC(random_state=42, **config)
         elif model_type == "xgboost":
             self.model = XGBClassifier(random_state=42, **config)
@@ -124,11 +126,19 @@ class Classifier:
 
         # ----------------- Otherwise, train the model -----------------
         train_dataloader, (X_train, y_train) = train_data_package
-        if self.model_type in ["svm", "xgboost"]:
+        if self.model_type == "svm":
             self.log and print(f'[Model Fit Status]: Fitting the model...')
             self.model.fit(X_train, y_train)
+        elif self.model_type == "xgboost":
+            self.log and print(f'[Model Fit Status]: Fitting the model...')
+            class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
+            sample_weight = np.array([class_weights[label] for label in y_train])
+            self.model.fit(X_train, y_train, sample_weight=sample_weight)
         elif self.model_type in ["logistic_regression", "dnn"]:
             self.log and print(f'[Model Fit Status]: Fitting the model...')
+            class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
+            class_weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(DEVICE)
+            self.criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
             self.model.train()
             for epoch in range(self.num_epochs):
                 for _, (features, labels) in enumerate(train_dataloader):
@@ -229,69 +239,77 @@ def assess_model(predictions, test_data_package, valid_labels=[0, 1, 2]):
 
     
 if __name__ == "__main__":
-    print(f'[Testing Status]: Building datasets and dataloaders...')
-    print(f'[Testing Status]: Building train dataloader...')
-    
-    # Create Embedding Dataset
+    print(f'[Pipeline Status]: Building datasets and dataloaders...')
+
+    # 1. Load full dataset
     text_dataset = TextDataset(
-    csv_path          = DATA_PATH,
-    id_column_idx     = ID_COLUMN_IDX,
-    comment_column_idx= COMMENT_COLUMN_IDX,
-    label_column_idx  = LABEL_COLUMN_IDX,
-    split_column_idx  = SUBSET_COLUMN_IDX,  # TRAIN / VAL / TEST column
-    augmented_classes = [],                 # ‑‑ no aug
-    augmentation_ratio= 0,
-    undersampling_targets = {},             # ‑‑ no undersampling
+        csv_path=DATA_PATH,
+        id_column_idx=ID_COLUMN_IDX,
+        comment_column_idx=COMMENT_COLUMN_IDX,
+        label_column_idx=LABEL_COLUMN_IDX,
+        split_column_idx=SUBSET_COLUMN_IDX,
+        augmented_classes=[],
+        augmentation_ratio=0,
+        undersampling_targets={},
     )
-    embedding_dataset = EmbeddingDataset(text_dataset=text_dataset,
-                                        embedder=Embedder(), 
-                                        embedding_method=EMBEDDING_METHOD)
-    
-    train_ds = embedding_dataset.get_subset('TRAIN')   # returns EmbeddingDataset._View
-    test_ds = embedding_dataset.get_subset('TEST')   # returns EmbeddingDataset._View
-    
-    # Get the DataLoader with embeddings
-    # Note the multiple objects outputted here
-    train_data_package = get_dataloader(train_ds,  
-                                batch_size=BATCH_SIZE,
-                                shuffle=False, 
-                                num_workers=2)
-    
-    test_data_package = get_dataloader(test_ds,  
-                            batch_size=BATCH_SIZE,
-                            shuffle=False, 
-                            num_workers=2)
-    
-    # Choose a model
-    print(f'[Testing Status]: Fitting a classifier...')
-    model_config = MODEL_CONFIG.get(MODEL_TYPE)
 
-    # Initialize and train the model
-    classifier = Classifier(model_config, 
-                            model_type=MODEL_TYPE,
-                            log=True)
-    classifier.fit(train_data_package)
+    embedding_dataset = EmbeddingDataset(
+        text_dataset=text_dataset,
+        embedder=Embedder(),
+        embedding_method=EMBEDDING_METHOD
+    )
 
-    # Test the model
-    print(f'[Testing Status]: Testing on test subset...')
-    predictions = classifier.predict(test_data_package)
+    # 2. Use TRAIN+VAL for final training
+    train_ds = embedding_dataset.get_subset("TRAIN+VAL")
+    test_ds = embedding_dataset.get_subset("TEST")
+
+    train_data_package = get_dataloader(train_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+    test_data_package = get_dataloader(test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
     
-    # # Extract comment IDs and real labels from the test dataset
-    # test_comment_ids = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.id_column_idx].tolist()
-    # real_labels = embedding_dataset.text_dataset.data.iloc[embedding_dataset.text_dataset.idx_split["TEST"], text_dataset.label_column_idx].to_numpy()
-    
-    # # Create a DataFrame for predictions
-    # results_df = pd.DataFrame({
-    #     "Comment ID": test_comment_ids,
-    #     "Real Label": real_labels,
-    #     "Predicted Label": predictions
-    # })
+    # 3. Train & Evaluate Each Model
+    for model_type, model_config in MODEL_CONFIG.items():
+        print(f'\n[Pipeline Status]: Processing model: {model_type}')
+        checkpoint_path = os.path.join(
+            CHECKPOINTS,
+            f'best_{model_type}.pt' if model_type in ["logistic_regression", "dnn"]
+            else f'best_{model_type}.pkl'
+        )
 
-    # # Save the DataFrame to a CSV file
-    # results_csv_path = "classification_results.csv"
-    # results_df.to_csv(results_csv_path, index=False)
-    # print(f"Results saved to {results_csv_path}")
+        # Initialize
+        classifier = Classifier(model_config, model_type=model_type, log=True)
 
-    # Show accuracy score per class + macro (classification report)
-    # Calculate accuracy and show classification report
-    _, _ = assess_model(predictions, test_data_package, valid_labels=[0, 1, 2])
+        # Train only if checkpoint missing
+        if not os.path.exists(checkpoint_path):
+            print(f"[Checkpoint Missing]: Training {model_type}...")
+            classifier.fit(train_data_package)
+        else:
+            print(f"[Checkpoint Found]: Loading {model_type}...")
+            classifier.load(checkpoint_path)
+
+        # Predict on test
+        print(f"[Prediction Status]: Predicting with {model_type} on test set...")
+        predictions = classifier.predict(test_data_package)
+
+        # Evaluate
+        print(f"[Evaluation]: {model_type}")
+        f1, report = assess_model(predictions, test_data_package, valid_labels=[0, 1, 2])
+
+        # Save predictions to CSV
+        test_comment_ids = embedding_dataset.text_dataset.data.iloc[
+            embedding_dataset.text_dataset.idx_split["TEST"],
+            text_dataset.id_column_idx
+        ].tolist()
+        real_labels = embedding_dataset.text_dataset.data.iloc[
+            embedding_dataset.text_dataset.idx_split["TEST"],
+            text_dataset.label_column_idx
+        ].to_numpy()
+
+        results_df = pd.DataFrame({
+            "Comment ID": test_comment_ids,
+            "Real Label": real_labels,
+            "Predicted Label": predictions
+        })
+
+        results_csv_path = f"classification_results_{model_type}.csv"
+        results_df.to_csv(results_csv_path, index=False)
+        print(f"[CSV Saved]: {results_csv_path}")

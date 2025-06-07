@@ -15,7 +15,7 @@ MODEL_CONFIG = {
         "weight_decay": 9.239168299828083e-05,
         "batch_norm": False,    # Do not modify in optimization
         "drop_out": 0.0,    # Do not modify in optimization
-        "layers": [768, 3]  # Do not modify in optimization
+        "layers": "[768, 3]"  # Do not modify in optimization
     },
     "svm": {
         'C': 14.113323810506161, 
@@ -42,6 +42,6 @@ MODEL_CONFIG = {
         'weight_decay': 1e-4, 
         'batch_norm': True, 
         'drop_out': 0.2, 
-        'layers': [768, 256, 3]
+        'layers': "[768, 256, 3]"
     }
 }

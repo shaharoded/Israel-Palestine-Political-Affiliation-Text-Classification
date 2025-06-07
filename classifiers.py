@@ -3,6 +3,7 @@ Class to contain the different model, each should be easiliy called for initiali
 fit and predict.
 '''
 import os
+import ast
 import random
 import numpy as np
 import pandas as pd
@@ -39,11 +40,13 @@ class DNN(nn.Module):
                     "learning_rate": float,
                     "batch_norm": bool,
                     "drop_out": float,
-                    "layers": list[int]
+                    "layers": str(list[int])
                 }
         """
         super(DNN, self).__init__()
         layers = []
+        if isinstance(config["layers"], str):
+            config["layers"] = list(ast.literal_eval(config["layers"]))
         input_size = config["layers"][0]
 
         # Iterate through the hidden layers
@@ -132,13 +135,14 @@ class Classifier:
             self.model.fit(X_train, y_train)
         elif self.model_type == "xgboost":
             self.log and print(f'[Model Fit Status]: Fitting the model...')
-            class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
+            class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train).astype(int), y=y_train.astype(int))
             sample_weight = np.array([class_weights[label] for label in y_train])
             self.model.fit(X_train, y_train, sample_weight=sample_weight)
         elif self.model_type in ["logistic_regression", "dnn"]:
             self.log and print(f'[Model Fit Status]: Fitting the model...')
-            class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train), y=y_train)
-            class_weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(DEVICE)
+            y_train = y_train.detach().cpu().numpy() if isinstance(y_train, torch.Tensor) else y_train
+            class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train).astype(int), y=y_train.astype(int))
+            class_weights_tensor = torch.tensor(class_weights, dtype=torch.float).to(DEVICE)
             self.criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
             self.model.train()
             for epoch in range(self.num_epochs):

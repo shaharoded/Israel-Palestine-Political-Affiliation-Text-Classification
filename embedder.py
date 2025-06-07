@@ -20,9 +20,12 @@ class Embedder:
         Initializes the Embedder object with a DistilBERT model and a TF-IDF vectorizer.,
         both loaded from pretrained files.
         """
+        # Set device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         # Load the DistilBERT tokenizer and model
         self.tokenizer = DistilBertTokenizer.from_pretrained(EMBEDDING_PATH)
-        self.distilbert_model = DistilBertModel.from_pretrained(EMBEDDING_PATH)
+        self.distilbert_model = DistilBertModel.from_pretrained(EMBEDDING_PATH).to(self.device)
         
         # Load the TF-IDF vectorizer
         self.tfidf_vectorizer = joblib.load(TFIDF_PATH)
@@ -74,19 +77,21 @@ class Embedder:
         """
         # Tokenize and encode the input text
         inputs = self.tokenizer(input_text, return_tensors="pt", truncation=True, padding=True, max_length=512)
-        
-        # Pass the input through the DistilBERT model
-        outputs = self.distilbert_model(**inputs)
-        last_hidden = outputs.last_hidden_state  # shape: (1, seq_len, hidden_size)
-        attention_mask = inputs["attention_mask"]
-        
-        # Mean pooling over all non-padding tokens
-        mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden.size()).float()
-        sum_embeddings = torch.sum(last_hidden * mask_expanded, dim=1)
-        sum_mask = mask_expanded.sum(dim=1)
+        inputs = {key: val.to(self.device) for key, val in inputs.items()}
 
-        mean_pooled = sum_embeddings / sum_mask
-        return mean_pooled.detach().numpy().flatten()
+        with torch.no_grad():
+            # Pass the input through the DistilBERT model
+            outputs = self.distilbert_model(**inputs)
+            last_hidden = outputs.last_hidden_state # shape: (1, seq_len, hidden_size)
+            attention_mask = inputs["attention_mask"]
+
+            # Mean pooling over all non-padding tokens
+            mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden.size()).float()
+            sum_embeddings = torch.sum(last_hidden * mask_expanded, dim=1)
+            sum_mask = mask_expanded.sum(dim=1)
+
+            mean_pooled = sum_embeddings / sum_mask
+            return mean_pooled.cpu().numpy().flatten()
 
 
     def _tfidf_embedding(self, input_text):

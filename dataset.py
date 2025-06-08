@@ -320,9 +320,12 @@ class TextDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return [self[i] for i in range(*idx.indices(len(self)))]
+
         row = self.data.iloc[idx]
         comment_id = row.iloc[self.id_column_idx]
-        comment = row.iloc[self.comment_column_idx]
+        comment    = row.iloc[self.comment_column_idx]
         encoded_label = LABELS_ENCODER.get(row.iloc[self.label_column_idx])
         return comment_id, comment, encoded_label
    

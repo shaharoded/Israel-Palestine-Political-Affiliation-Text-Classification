@@ -212,6 +212,12 @@ class Classifier:
                     predictions.extend(preds.cpu().tolist())
             return (predictions, probas) if proba else predictions
 
+    def save(self, path):
+        if self.model_type in ["svm", "xgboost"]:
+            with open(path, "wb") as f:
+                pickle.dump(self.model, f)
+        elif self.model_type in ["logistic_regression", "dnn"]:
+            torch.save(self.model.state_dict(), path)
 
     def load(self, checkpoint_path=None):
         """
@@ -315,6 +321,7 @@ if __name__ == "__main__":
         if not os.path.exists(checkpoint_path):
             print(f"[Checkpoint Missing]: Training {model_type}...")
             classifier.fit(train_data_package)
+            classifier.save(checkpoint_path)
         else:
             print(f"[Checkpoint Found]: Loading {model_type}...")
             classifier.load(checkpoint_path)

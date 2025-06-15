@@ -13,7 +13,7 @@ Using the automated tagger as benchmark and combining advanced contextual embedd
 - **Classifier**: Responsible for the flexible initialization and training of a classifier head, designated to train on top of the vectorized dataset (`classifiers.py`).
 - **Customizable Configurations**: Easily adjustable parameters for LLM settings, , dataset settings, best model's configurations, and testing modes. Each major component has it's own configurations file under `Config` folder.
 Note the the current configurations are the ones for the best performing model based on our research.
-- **Analysis**: Within this folder you can find the analysis, tests and optimizations that took place in the process. This folder also offers different flows like a GPU-compatible flow to use trained embedder + classifier on large dataset (in my case, 2.5M records), And the ablation studies done in order to assert the necessity for each component of this pipeline.
+- **Analysis**: Within this folder you can find the analysis and optimizations that took place in the process. This folder also offers different flows like a GPU-compatible flow to use trained embedder + classifier on large dataset (in my case, 2.5M records).
 
 ## Usage
 1. Configure settings in the `Config` files, one for auto-tagger, one for dataset and one for the classifiers:

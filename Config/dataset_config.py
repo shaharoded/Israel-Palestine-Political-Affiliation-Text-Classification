@@ -7,7 +7,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Base directories (relative to project root)
 DATA_DIR_PATH = os.path.join(project_root, 'Data')
 EMBEDDING_DIR_PATH = os.path.join(project_root, 'Embedding')
-DATA_PATH = os.path.join(DATA_DIR_PATH, 'full_research_data_tagged.csv')  # Full path to the data file
+DATA_PATH = os.path.join(DATA_DIR_PATH, 'cache', 'full_research_data_tagged.csv')  # Full path to the data file
 EMBEDDING_PATH = os.path.join(EMBEDDING_DIR_PATH, "distilbert-finetuned")  # Full path to the embedding directory
 TFIDF_PATH = os.path.join(EMBEDDING_DIR_PATH, 'tfidf/tfidf_vectorizer.pkl')  # Full path to the TF-IDF vectorizer
 

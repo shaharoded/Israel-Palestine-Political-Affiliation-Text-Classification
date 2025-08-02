@@ -13,13 +13,13 @@ Using the automated tagger as benchmark and combining advanced contextual embedd
 - **Classifier**: Responsible for the flexible initialization and training of a classifier head, designated to train on top of the vectorized dataset (`classifiers.py`).
 - **Customizable Configurations**: Easily adjustable parameters for LLM settings, , dataset settings, best model's configurations, and testing modes. Each major component has it's own configurations file under `Config` folder.
 Note the the current configurations are the ones for the best performing model based on our research.
-- **Analysis**: Within this folder you can find the analysis and optimizations that took place in the process. This folder also offers different flows like a GPU-compatible flow to use trained embedder + classifier on large dataset (in my case, 2.5M records).
+- **Analysis**: Within this folder you can find the analysis and optimizations that took place in the process. This folder also offers different flows like a GPU-compatible flow to use trained embedder + classifier on large dataset (in my case, 2.7M records).
 
 ## Usage
 1. Configure settings in the `Config` files, one for auto-tagger, one for dataset and one for the classifiers:
    - Define file paths.
    - Set parameters (eg. OpenAI engine), augmentation ratio, and test batch size.
-2. Ensure `secret_keys.py` is in place with your OpenAI API key.
+2. Ensure `secret_keys.py` is in place (root repository) with your OpenAI API key.
 
 ### Running the Automated Tagger
 The `llm_tagger.py` module provides functionality to generate labels for an untagged dataset using the OpenAI API. The idea and motivation behind this is to create a sufficient subset to train for a classification task without having to manually tag tens of thousands of textual comments. Run the pipeline through `main.py`:
@@ -27,7 +27,7 @@ The `llm_tagger.py` module provides functionality to generate labels for an unta
 - **Test Mode** (`TEST_MODE = True`):
   - Tests the tagging process on a small, random subset of manually tagged data (`TAGGED_DATA_PATH`) of `TEST_BATCH_SIZE` comments.
   - Outputs an Accuracy and F1 score and saves mismatched predictions for inspection in `OUTPUT_FILE_PATH`.
-  - Ideal for fine-tuning the prompt and verifying the labeling quality.
+  - Ideal for prompt engineering and verifying the labeling quality.
 - **Batch Mode** (`TEST_MODE = False`):
   - Processes the entire untagged dataset (`FULL_DATA_PATH`) using the OpenAI batch API.
   - Outputs a fully labeled dataset in `OUTPUT_FILE_PATH`.
@@ -57,16 +57,8 @@ Set up the environment and install dependencies:
 ```bash
 python -m venv venv
 venv\Scripts\activate
-pip install --upgrade pip
 pip install -r requirements.txt
 ```
-
-## Git Commit Tips
-```
-git add .
-git commit -m "commit message"
-git push -f origin main
-````
 
 ## Final Draft of the Paper
 In this link, you may find the final draft for this paper, hoping it will be published soon:  

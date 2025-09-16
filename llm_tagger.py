@@ -485,6 +485,7 @@ if __name__ == "__main__":
     input_file_path = TAGGED_DATA_PATH if TEST_MODE else FULL_DATA_PATH
     batch_file_path = BATCH_FILE_PATH
     output_file_path = OUTPUT_FILE_PATH
+    print('[LLM Tagger]: running LLM tagger on file: ', input_file_path)
 
     # Initiate tagger object
     tagger = AITagger(

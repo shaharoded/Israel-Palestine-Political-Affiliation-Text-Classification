@@ -34,7 +34,7 @@ The `llm_tagger.py` module provides functionality to generate labels for an unta
   - Used to prepare training data for ML/DL models.
   - The function `AITagger.run_pipeline` also have an input `method` that can be 'regular' or 'batch'. This addition is meant to use regular API or batch API on choice, given that the batch is ~50% cheaper but can take 24h per batch.
 
-The automated tagger reached F1 Score of **87.8%** on the manually tagged subset (~1K comments).
+The automated tagger reached F1 Score of **87.8%** on the manually tagged subset (~1K comments) with the engineered prompt.
 
 ### Running the Dataset
 The `dataset.py` module is pretty straight forward and can be run through its `__main__`. Adjust the path and choose the subset you wish to work with (pre-divided), set up the file paths for the research data and vectorization weights, set augmentation ratio, traget groups and the data shape of the dataloader, meaning - this module will create a textual dataloader on defualt, assuming you have yet trained a model, but on demand will create a vectorized dataset (with embeddings for comments), under the assumption you have already fine-tuned a model, and have it's weights available. The vectorized dataset, once created under certain configurations will be saved as a pickle file to act as cache. If you'll delete this file you'll have to re-calculate the dataset. Not recommended.

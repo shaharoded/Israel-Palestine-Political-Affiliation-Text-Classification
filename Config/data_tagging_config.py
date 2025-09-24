@@ -1,16 +1,32 @@
+# # Locations
+# FULL_DATA_PATH = 'Data/israel-palestine/cache/research_data_untagged.csv'
+# TAGGED_DATA_PATH = 'Data/israel-palestine/cache/manually_tagged_data.csv'
+# BATCH_FILE_PATH = 'Data/israel-palestine/Batches/mini_batch_{}.jsonl'   # Path to save jsonl file for batch job
+# OUTPUT_FILE_PATH = 'Data/israel-palestine/research_data_autotagged.csv'  # Path to save tagged comments
+# ID_COLUMN_IDX = 0
+# COMMENT_COLUMN_IDX = 1   # The column where the raw text is in the file to be tagged
+# LABEL_COLUMN_IDX = 7    # The column where the label for the comment is (on tagged data only)
+
+# # Labels
+# LABELS_DECODER = {
+#     "0": "Pro-Palestine",
+#     "1": "Pro-Israel",
+#     "2": "Undefined"
+# }
+
 # Locations
-FULL_DATA_PATH = 'Data/israel-palestine/cache/research_data_untagged.csv'
-TAGGED_DATA_PATH = 'Data/israel-palestine/cache/manually_tagged_data.csv'
-BATCH_FILE_PATH = 'Data/israel-palestine/Batches/mini_batch_{}.jsonl'   # Path to save jsonl file for batch job
-OUTPUT_FILE_PATH = 'Data/israel-palestine/research_data_autotagged.csv'  # Path to save tagged comments
+FULL_DATA_PATH = 'Data/p-stance/pstance_trump_clean.csv'
+TAGGED_DATA_PATH = 'Data/p-stance/pstance_trump_clean.csv'
+BATCH_FILE_PATH = 'Data/p-stance/Batches/mini_batch_{}.jsonl'   # Path to save jsonl file for batch job
+OUTPUT_FILE_PATH = 'Data/p-stance/research_data_autotagged.csv'  # Path to save tagged comments
 ID_COLUMN_IDX = 0
 COMMENT_COLUMN_IDX = 1   # The column where the raw text is in the file to be tagged
-LABEL_COLUMN_IDX = 7    # The column where the label for the comment is (on tagged data only)
+LABEL_COLUMN_IDX = 3    # The column where the label for the comment is (on tagged data only)
 
 # Labels
 LABELS_DECODER = {
-    "0": "Pro-Palestine",
-    "1": "Pro-Israel",
+    "0": "Pro-Trump",
+    "1": "Against-Trump",
     "2": "Undefined"
 }
 
@@ -109,6 +125,54 @@ FEW_SHOT_INSTRUCTIONS = """
     Respond *only with the label (0, 1, or 2)* and nothing else.
     """
 
+
+TRUMP_LABELING_INSTRUCTIONS = """
+You are a labeling assistant tasked with analyzing social-media comments about U.S. politics where the primary target is Donald Trump.
+Comments are written by independent users and may express support for or opposition to Trump.
+
+Assign ONE of the following labels to each comment:
+
+"0" - The comment expresses a clear Pro-Trump stance (support, approval, advocacy of Trump or his positions).
+"1" - The comment expresses a clear Against-Trump stance (criticism, opposition, disapproval of Trump or his positions).
+"2" - The comment's stance toward Trump cannot be determined from the content, OR it is unrelated/out-of-domain. 
+       Also assign "2" for content that is pure sarcasm without stance context, a meme/gif with no textual stance, or
+       questions that do not imply a position.
+
+Guidelines to help distinguish stances
+--------------------------------------
+
+Pro-Trump (label "0"):
+- Praises Trump's leadership, achievements, or policies (e.g., economy, immigration/border, foreign policy, judicial appointments).
+- Endorses slogans or frames historically associated with Trump (e.g., “MAGA”, “America First”, “drain the swamp”, “build the wall”)
+  when used approvingly or to encourage support/voting.
+- Defends Trump against accusations or investigations; dismisses criticism as media bias, “witch hunt”, or attacks by political opponents.
+- Frames Trump as better than opponents (e.g., “Biden is ruining the country—Trump fixed the economy”).
+- Common cues (DO NOT rely on these alone; interpret intent): MAGA, America First, drain the swamp, fake news, witch hunt, rigged,
+  build the wall, law and order, keep Trump, vote Trump.
+
+Against-Trump (label "1"):
+- Criticizes Trump's character, actions, or policies; expresses fear/disapproval of his return to office or continued influence.
+- References legal cases, indictments, January 6th, election denial, or ethics concerns as reasons to oppose him.
+- Praises opponents specifically as a counter to Trump (e.g., “We need Biden/anyone but Trump”).
+- Uses pejorative nicknames or negative moral/political judgments directed at Trump.
+- Common cues (DO NOT rely on these alone; interpret intent): insurrection, coup, authoritarian, fascist, racist, liar, indicted,
+  convicted, dangerous, tax returns, January 6, stop Trump, never Trump.
+
+Undefined / Out-of-domain (label "2"):
+- The text is not about Trump or U.S. electoral politics (e.g., comments drawn from another topic/domain).
+- The text mentions Trump but gives no discernible stance (e.g., neutral news headline without commentary).
+- The text is mostly non-verbal (links, emojis, gifs) or purely sarcastic without clear target/stance.
+
+Additional considerations
+-------------------------
+- Sarcasm and irony: determine stance by what is being mocked or affirmed, not by keywords alone.
+- Quoting: if the comment quotes another statement, label based on the author's attitude toward that quote (agreement vs. rebuttal).
+- Comparative statements: support/opposition to Trump may be expressed via praise/critique of opponents—interpret in context.
+- Do not infer stance from user identity or hashtags alone. Use the surrounding wording and intent.
+- The text you receive may have hashtags/URLs/mentions removed; classify based on remaining linguistic content.
+
+Respond only with a single label ("0", "1", or "2") and nothing else.
+"""
     
 
 # LLM Configurations
@@ -124,12 +188,12 @@ BATCH_ROW_FORMAT = {
     "body": {
         "model": OPENAI_ENGINE,
         "messages": [
-            {"role": "system", "content": LABELING_INSTRUCTIONS},
+            {"role": "system", "content": TRUMP_LABELING_INSTRUCTIONS},
             {"role": "user", "content": "Comment: {comment}"}
         ],
         "temperature": TEMPERATURE
     }
 }
 
-TEST_BATCH_SIZE = 1060    # Number of comments for a single test of the model (1060 -> manually tagged comments)
+TEST_BATCH_SIZE = 50    # Number of comments for a single test of the model (1060 -> manually tagged comments)
 TEST_MODE = True    # Will shrink the batch size (to TEST_BATCH_SIZE), use the manually_tagged_data and calculate accuracy
